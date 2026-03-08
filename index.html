@@ -1,0 +1,2255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Croix-Rouge | Gestion de Flotte</title>
+
+<!-- PWA Meta Tags -->
+<meta name="application-name" content="Flotte CRB">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Flotte CRB">
+<meta name="description" content="Gestion de la flotte de véhicules Croix-Rouge de Belgique">
+<meta name="theme-color" content="#CE1126">
+<meta name="mobile-web-app-capable" content="yes">
+
+<!-- PWA Manifest (inline via JS blob) -->
+<script>
+(function() {
+  const manifest = {
+    name: "Croix-Rouge | Gestion de Flotte",
+    short_name: "Flotte CRB",
+    description: "Gestion de la flotte de véhicules Croix-Rouge de Belgique",
+    start_url: ".",
+    display: "standalone",
+    background_color: "#CE1126",
+    theme_color: "#CE1126",
+    orientation: "portrait-primary",
+    lang: "fr",
+    icons: [
+      {
+        src: "data:image/svg+xml," + encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='24' fill='%23CE1126'/><rect x='76' y='32' width='40' height='128' fill='white'/><rect x='32' y='76' width='128' height='40' fill='white'/></svg>`),
+        sizes: "192x192",
+        type: "image/svg+xml",
+        purpose: "any maskable"
+      },
+      {
+        src: "data:image/svg+xml," + encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='64' fill='%23CE1126'/><rect x='206' y='86' width='100' height='340' fill='white'/><rect x='86' y='206' width='340' height='100' fill='white'/></svg>`),
+        sizes: "512x512",
+        type: "image/svg+xml",
+        purpose: "any maskable"
+      }
+    ],
+    categories: ["productivity", "utilities"],
+    shortcuts: [
+      {
+        name: "Voir la flotte",
+        short_name: "Flotte",
+        description: "Accéder à la vue flotte",
+        url: "."
+      }
+    ]
+  };
+
+  const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = url;
+  document.currentScript.parentNode.appendChild(link);
+})();
+</script>
+
+<!-- Service Worker for offline support -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    const swCode = `
+      const CACHE_NAME = 'flotte-crb-v1';
+      self.addEventListener('install', e => {
+        self.skipWaiting();
+      });
+      self.addEventListener('activate', e => {
+        e.waitUntil(clients.claim());
+      });
+      self.addEventListener('fetch', e => {
+        e.respondWith(
+          caches.match(e.request).then(cached => cached || fetch(e.request).catch(() => new Response('Hors ligne', {status: 200})))
+        );
+      });
+    `;
+    const swBlob = new Blob([swCode], {type: 'application/javascript'});
+    const swUrl = URL.createObjectURL(swBlob);
+    navigator.serviceWorker.register(swUrl).catch(() => {});
+  });
+}
+</script>
+
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --red: #CE1126;
+    --red-light: #f5e0e3;
+    --red-dark: #9b0d1e;
+    --bg: #f8f6f1;
+    --card: #ffffff;
+    --text: #1a1a1a;
+    --muted: #888;
+    --border: #e5e0d8;
+    --green: #2d7a3a;
+    --orange: #d97706;
+    --blue: #1e40af;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Syne', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* HEADER */
+  header {
+    background: var(--red);
+    color: white;
+    padding: 0 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 12px rgba(206,17,38,0.3);
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-cross {
+    width: 36px; height: 36px;
+    background: white;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .logo-cross::before, .logo-cross::after {
+    content: '';
+    position: absolute;
+    background: var(--red);
+    border-radius: 2px;
+  }
+  .logo-cross::before { width: 22px; height: 6px; }
+  .logo-cross::after { width: 6px; height: 22px; }
+  .logo h1 { font-size: 1rem; font-weight: 700; letter-spacing: 0.02em; }
+  .logo span { font-size: 0.7rem; opacity: 0.85; display: block; font-weight: 400; }
+  .header-right { font-size: 0.75rem; opacity: 0.8; font-family: 'DM Mono', monospace; display: flex; align-items: center; gap: 12px; }
+  #installBtn {
+    display: none;
+    background: white;
+    color: var(--red);
+    border: none;
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    align-items: center;
+    gap: 6px;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+  }
+  #installBtn:hover { opacity: 0.85; }
+  #installBtn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+  /* LAYOUT */
+  .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+
+  /* STATS BAR */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.2rem 1.5rem;
+    border: 1.5px solid var(--border);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,0.08); }
+  .stat-value { font-size: 2rem; font-weight: 800; color: var(--red); line-height: 1; }
+  .stat-label { font-size: 0.72rem; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.08em; font-family: 'DM Mono', monospace; }
+
+  /* CONTROLS */
+  .controls {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .search-box {
+    flex: 1;
+    min-width: 200px;
+    position: relative;
+  }
+  .search-box input {
+    width: 100%;
+    padding: 0.6rem 1rem 0.6rem 2.5rem;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.85rem;
+    background: white;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .search-box input:focus { border-color: var(--red); }
+  .search-icon {
+    position: absolute;
+    left: 0.8rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  select {
+    padding: 0.6rem 1rem;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.85rem;
+    background: white;
+    cursor: pointer;
+    outline: none;
+  }
+  select:focus { border-color: var(--red); }
+
+  /* TABS */
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1.5rem;
+    background: white;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+    width: fit-content;
+  }
+  .tab-btn {
+    padding: 0.5rem 1.2rem;
+    border: none;
+    background: transparent;
+    border-radius: 7px;
+    cursor: pointer;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--muted);
+    transition: all 0.2s;
+  }
+  .tab-btn.active { background: var(--red); color: white; }
+
+  /* VEHICLE GRID */
+  .vehicles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1.2rem;
+  }
+  .vehicle-card {
+    background: white;
+    border-radius: 14px;
+    border: 1.5px solid var(--border);
+    overflow: hidden;
+    transition: transform 0.15s, box-shadow 0.15s;
+    cursor: pointer;
+  }
+  .vehicle-card:hover { transform: translateY(-3px); box-shadow: 0 10px 32px rgba(0,0,0,0.1); }
+  .vehicle-card.selected { border-color: var(--red); box-shadow: 0 0 0 3px rgba(206,17,38,0.15); }
+  .vc-header {
+    padding: 1rem 1.2rem;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .vc-title { color: white; font-weight: 700; font-size: 0.95rem; }
+  .vc-plate {
+    background: var(--red);
+    color: white;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+  }
+  .vc-body { padding: 1rem 1.2rem; }
+  .vc-km {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1;
+    font-family: 'DM Mono', monospace;
+  }
+  .vc-km span { font-size: 0.75rem; color: var(--muted); font-family: 'Syne', sans-serif; font-weight: 400; }
+  .vc-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+    margin-top: 0.8rem;
+  }
+  .vc-meta-item { }
+  .vc-meta-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-family: 'DM Mono', monospace; }
+  .vc-meta-value { font-size: 0.82rem; font-weight: 600; margin-top: 2px; }
+  .vc-checks {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+  .check-pill {
+    font-size: 0.65rem;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-family: 'DM Mono', monospace;
+    font-weight: 500;
+  }
+  .check-ok { background: #dcfce7; color: #166534; }
+  .check-warn { background: #fef3c7; color: #92400e; }
+  .check-bad { background: #fee2e2; color: #991b1b; }
+  .vc-remarks {
+    margin-top: 0.8rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--bg);
+    border-radius: 8px;
+    font-size: 0.75rem;
+    color: #555;
+    border-left: 3px solid var(--red);
+    font-style: italic;
+    line-height: 1.5;
+  }
+
+  /* HISTORY TABLE */
+  .history-panel { display: none; }
+  .history-panel.active { display: block; }
+  .table-wrap { overflow-x: auto; border-radius: 12px; border: 1.5px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; background: white; }
+  thead tr { background: #1a1a1a; }
+  th {
+    color: white;
+    font-size: 0.7rem;
+    font-family: 'DM Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.8rem 1rem;
+    text-align: left;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  tbody tr:hover { background: #fafafa; }
+  tbody tr:last-child { border-bottom: none; }
+  td { padding: 0.7rem 1rem; font-size: 0.82rem; }
+  td.km { font-family: 'DM Mono', monospace; font-weight: 600; }
+  td.date-cell { font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--muted); }
+  .ok { color: var(--green); font-weight: 600; }
+  .nok { color: var(--red); font-weight: 600; }
+  .warn-cell { color: var(--orange); font-weight: 600; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-family: 'DM Mono', monospace;
+  }
+  .badge-green { background: #dcfce7; color: #166534; }
+  .badge-red { background: #fee2e2; color: #991b1b; }
+  .badge-orange { background: #fef3c7; color: #92400e; }
+
+  /* EVOLUTION CHART */
+  .chart-panel { display: none; }
+  .chart-panel.active { display: block; }
+  .chart-container {
+    background: white;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    padding: 1.5rem;
+  }
+  canvas { max-width: 100%; }
+
+  /* VEHICLE DETAIL MODAL */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 200;
+    padding: 1rem;
+    overflow-y: auto;
+  }
+  .modal-overlay.open { display: flex; align-items: flex-start; justify-content: center; padding-top: 2rem; }
+  .modal {
+    background: white;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 780px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .modal-header {
+    background: var(--red);
+    color: white;
+    padding: 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .modal-header h2 { font-size: 1.2rem; font-weight: 800; }
+  .modal-close {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-body { padding: 1.5rem; }
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .info-item { }
+  .info-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-family: 'DM Mono', monospace; margin-bottom: 2px; }
+  .info-value { font-size: 0.9rem; font-weight: 600; }
+  .section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-family: 'DM Mono', monospace; font-weight: 500; margin: 1.2rem 0 0.6rem; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .history-mini { max-height: 300px; overflow-y: auto; }
+  .history-row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+  .history-row:last-child { border-bottom: none; }
+  .h-date { font-family: 'DM Mono', monospace; color: var(--muted); min-width: 80px; font-size: 0.72rem; }
+  .h-km { font-family: 'DM Mono', monospace; font-weight: 700; min-width: 80px; }
+  .h-note { color: #555; font-style: italic; }
+  .km-bar-wrap { margin-top: 1rem; }
+  .km-bar-label { display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px; }
+  .km-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .km-bar-fill { height: 100%; background: linear-gradient(90deg, var(--red-dark), var(--red)); border-radius: 4px; transition: width 0.5s ease; }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 4rem; color: var(--muted); }
+  .empty h3 { font-size: 1.2rem; margin-bottom: 0.5rem; }
+
+  /* Section headers */
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .section-header h2 { font-size: 1rem; font-weight: 700; color: var(--text); }
+  .count-badge { background: var(--red); color: white; padding: 2px 10px; border-radius: 20px; font-size: 0.72rem; font-family: 'DM Mono', monospace; }
+
+  /* Fleet panel */
+  .fleet-panel { display: none; }
+  .fleet-panel.active { display: block; }
+
+  @media (max-width: 600px) {
+    .container { padding: 1rem; }
+    .vehicles-grid { grid-template-columns: 1fr; }
+    .info-grid { grid-template-columns: 1fr; }
+    .modal { border-radius: 12px; }
+  }
+
+  /* CHRONOLOGICAL PANELS */
+  .chrono-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  @media (max-width: 768px) { .chrono-grid { grid-template-columns: 1fr; } }
+  .chrono-panel {
+    background: white;
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .chrono-header {
+    padding: 0.9rem 1.2rem;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1.5px solid var(--border);
+    font-size: 0.82rem; font-weight: 700;
+  }
+  .chrono-header-ent { background: #eff6ff; border-bottom-color: #bfdbfe; }
+  .chrono-header-ct  { background: #fefce8; border-bottom-color: #fef08a; }
+  .chrono-icon { width: 28px; height: 28px; border-radius: 8px; display:flex; align-items:center; justify-content:center; font-size:0.9rem; flex-shrink:0; }
+  .icon-ent { background: #dbeafe; }
+  .icon-ct-bg { background: #fef9c3; }
+  .chrono-list { padding: 0.5rem 0; max-height: 420px; overflow-y: auto; }
+  .chrono-row {
+    display: flex; align-items: center; gap: 0.8rem;
+    padding: 0.6rem 1.2rem;
+    border-bottom: 1px solid #f5f3ee;
+    transition: background 0.12s;
+    cursor: default;
+  }
+  .chrono-row:last-child { border-bottom: none; }
+  .chrono-row:hover { background: #f8f6f1; }
+  .chrono-rank {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items:center; justify-content:center;
+    font-size: 0.62rem; font-weight: 800; flex-shrink: 0;
+    font-family: 'DM Mono', monospace;
+  }
+  .rank-urgent { background: #fee2e2; color: #991b1b; }
+  .rank-warn   { background: #fef3c7; color: #92400e; }
+  .rank-ok     { background: #dcfce7; color: #166534; }
+  .rank-far    { background: #f3f4f6; color: #6b7280; }
+  .chrono-veh  { flex: 1; min-width: 0; }
+  .chrono-name { font-size: 0.78rem; font-weight: 700; white-space: nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chrono-plate { font-size: 0.62rem; color: var(--muted); font-family: 'DM Mono', monospace; margin-top:1px; }
+  .chrono-right { text-align: right; flex-shrink: 0; }
+  .chrono-date  { font-size: 0.72rem; font-weight: 700; font-family: 'DM Mono', monospace; }
+  .chrono-delta { font-size: 0.6rem; margin-top:2px; font-family: 'DM Mono', monospace; }
+  .delta-overdue { color: #dc2626; }
+  .delta-soon   { color: #d97706; }
+  .delta-ok     { color: #16a34a; }
+  .delta-far    { color: #9ca3af; }
+  .chrono-status-bar { height: 3px; border-radius: 0 0 14px 14px; }
+  .bar-danger { background: linear-gradient(90deg, #dc2626, #fca5a5); }
+  .bar-warn   { background: linear-gradient(90deg, #d97706, #fde68a); }
+  .bar-ok     { background: linear-gradient(90deg, #16a34a, #86efac); }
+
+  /* MAINTENANCE FORM */
+  .form-panel { display: none; }
+  .form-panel.active { display: block; }
+  .maint-form {
+    background: white; border: 1.5px solid var(--border);
+    border-radius: 16px; overflow: hidden; max-width: 900px; margin: 0 auto;
+  }
+  .maint-form-header {
+    background: var(--red); color: white;
+    padding: 1.2rem 1.5rem; display: flex; align-items: center; gap: 12px;
+  }
+  .maint-form-header h3 { font-size: 1rem; font-weight: 700; }
+  .maint-form-header p  { font-size: 0.72rem; opacity: 0.85; margin-top: 2px; }
+  .maint-form-body { padding: 1.5rem; }
+  .form-top-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+  @media (max-width: 600px) { .form-top-row { grid-template-columns: 1fr; } }
+  .fg { margin-bottom: 0; }
+  .fg label { font-size: 0.65rem; font-family: 'DM Mono', monospace; color: var(--muted); display: block; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  .fg input, .fg select, .fg textarea {
+    width: 100%; background: #f8f6f1; border: 1.5px solid var(--border);
+    border-radius: 8px; padding: 9px 12px; color: var(--text);
+    font-family: 'Syne', sans-serif; font-size: 0.82rem; outline: none;
+    transition: border-color 0.15s;
+  }
+  .fg input:focus, .fg select:focus, .fg textarea:focus { border-color: var(--red); background: white; }
+  .fg textarea { min-height: 72px; resize: vertical; }
+  .checks-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem; margin-bottom: 1.5rem;
+  }
+  .check-block {
+    border: 1.5px solid var(--border); border-radius: 10px; padding: 0.9rem;
+    transition: border-color 0.15s;
+  }
+  .check-block:hover { border-color: #ccc; }
+  .check-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-family: 'DM Mono', monospace; margin-bottom: 0.6rem; display: flex; align-items: center; gap: 6px; }
+  .check-options { display: flex; gap: 6px; flex-wrap: wrap; }
+  .check-opt {
+    flex: 1; min-width: 48px; padding: 6px 4px; border: 1.5px solid var(--border);
+    border-radius: 6px; cursor: pointer; text-align: center;
+    font-size: 0.7rem; font-weight: 600; transition: all 0.12s;
+    background: white; color: var(--muted); user-select: none;
+  }
+  .check-opt:hover { border-color: #999; color: var(--text); }
+  .check-opt.selected-ok     { background: #dcfce7; border-color: #16a34a; color: #166534; }
+  .check-opt.selected-nok    { background: #fee2e2; border-color: #dc2626; color: #991b1b; }
+  .check-opt.selected-warn   { background: #fef3c7; border-color: #d97706; color: #92400e; }
+  .check-opt.selected-custom { background: #eff6ff; border-color: #3b82f6; color: #1d4ed8; }
+  .qty-input { width: 100%; margin-top: 6px; padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 0.78rem; background: white; font-family: 'DM Mono', monospace; outline: none; }
+  .qty-input:focus { border-color: var(--red); }
+  .form-actions { display: flex; gap: 1rem; justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .btn-submit {
+    background: var(--red); color: white; border: none;
+    font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 700;
+    padding: 10px 28px; border-radius: 8px; cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-submit:hover { opacity: 0.85; }
+  .btn-reset {
+    background: var(--border); color: var(--text); border: none;
+    font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 700;
+    padding: 10px 20px; border-radius: 8px; cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-reset:hover { opacity: 0.75; }
+  .form-success {
+    display: none; background: #dcfce7; border: 1.5px solid #16a34a;
+    color: #166534; border-radius: 10px; padding: 1rem 1.2rem;
+    font-size: 0.85rem; font-weight: 600; margin-bottom: 1rem; align-items: center; gap: 10px;
+  }
+  .form-success.show { display: flex; }
+  .saved-entries { margin-top: 2rem; }
+  .saved-entries h4 { font-size: 0.8rem; font-weight: 700; margin-bottom: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-family: 'DM Mono', monospace; }
+  .saved-row {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 0.7rem 0.9rem; background: #f8f6f1; border-radius: 8px;
+    margin-bottom: 0.5rem; font-size: 0.78rem;
+  }
+  .saved-row .sr-veh { font-weight: 700; min-width: 80px; }
+  .saved-row .sr-date { font-family: 'DM Mono', monospace; color: var(--muted); min-width: 80px; }
+  .saved-row .sr-del { margin-left: auto; background: none; border: none; color: #ccc; cursor: pointer; font-size: 1rem; transition: color 0.12s; }
+  .saved-row .sr-del:hover { color: var(--red); }
+
+
+  /* EDIT DATE MODAL */
+  .date-modal-overlay {
+    display:none; position:fixed; inset:0; z-index:500;
+    background:rgba(0,0,0,0.5); align-items:center; justify-content:center;
+    backdrop-filter:blur(3px);
+  }
+  .date-modal-overlay.open { display:flex; }
+  .date-modal {
+    background:white; border-radius:16px; padding:2rem;
+    width:90%; max-width:420px; box-shadow:0 20px 60px rgba(0,0,0,0.25);
+    animation: dmSlide 0.2s ease;
+  }
+  @keyframes dmSlide { from{transform:translateY(16px);opacity:0} to{transform:translateY(0);opacity:1} }
+  .date-modal h4 { font-size:0.95rem; font-weight:800; margin-bottom:0.3rem; }
+  .date-modal .dm-sub { font-size:0.7rem; color:var(--muted); font-family:'DM Mono',monospace; margin-bottom:1.4rem; }
+  .date-modal .fg-row { display:grid; grid-template-columns:1fr 1fr; gap:0.8rem; margin-bottom:0.9rem; }
+  .date-modal .fg label { font-size:0.63rem; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-family:'DM Mono',monospace; display:block; margin-bottom:5px; }
+  .date-modal .fg input, .date-modal .fg select {
+    width:100%; padding:9px 11px; border:1.5px solid var(--border); border-radius:8px;
+    font-family:'Syne',sans-serif; font-size:0.82rem; background:#f8f6f1; outline:none; transition:border-color .15s;
+  }
+  .date-modal .fg input:focus, .date-modal .fg select:focus { border-color:var(--red); background:white; }
+  .date-modal .dm-actions { display:flex; gap:0.7rem; margin-top:1.3rem; }
+  .dm-btn-save { flex:1; background:var(--red); color:white; border:none; padding:10px; border-radius:8px; font-family:'Syne',sans-serif; font-weight:700; font-size:0.82rem; cursor:pointer; }
+  .dm-btn-save:hover { opacity:.85; }
+  .dm-btn-cancel { background:#f0ece6; color:var(--text); border:none; padding:10px 16px; border-radius:8px; font-family:'Syne',sans-serif; font-weight:600; font-size:0.82rem; cursor:pointer; }
+  .dm-btn-cancel:hover { background:var(--border); }
+
+  /* NEXT MAINTENANCE BANNER */
+  .next-maint-banner {
+    background:linear-gradient(135deg,#1a3a5c 0%,#1e40af 100%);
+    border-radius:12px; padding:1rem 1.4rem;
+    display:flex; align-items:center; gap:1.2rem;
+    margin-bottom:1.5rem; color:white;
+  }
+  .nmb-icon { font-size:1.8rem; flex-shrink:0; }
+  .nmb-title { font-size:0.72rem; opacity:.75; font-family:'DM Mono',monospace; text-transform:uppercase; letter-spacing:.07em; }
+  .nmb-date  { font-size:1.05rem; font-weight:800; margin:2px 0; }
+  .nmb-sub   { font-size:0.68rem; opacity:.7; font-family:'DM Mono',monospace; }
+  .nmb-right { margin-left:auto; text-align:right; flex-shrink:0; }
+  .nmb-days  { font-size:1.5rem; font-weight:800; line-height:1; }
+  .nmb-days-label { font-size:0.62rem; opacity:.7; font-family:'DM Mono',monospace; }
+  @media(max-width:480px) { .next-maint-banner { flex-wrap:wrap; } .nmb-right { margin-left:0; } }
+
+  /* SIGNALER PROBLEME BUTTON */
+  .report-fab {
+    position:fixed; bottom:24px; right:24px; z-index:400;
+    background:var(--red); color:white; border:none;
+    width:58px; height:58px; border-radius:50%;
+    font-size:1.5rem; cursor:pointer;
+    box-shadow:0 4px 20px rgba(206,17,38,0.5);
+    transition:transform .18s, box-shadow .18s;
+    display:flex; align-items:center; justify-content:center;
+    animation: fabPulse 3s infinite;
+  }
+  .report-fab:hover { transform:scale(1.1); box-shadow:0 6px 28px rgba(206,17,38,0.65); }
+  @keyframes fabPulse {
+    0%,80%,100% { box-shadow:0 4px 20px rgba(206,17,38,0.5); }
+    40% { box-shadow:0 4px 28px rgba(206,17,38,0.8), 0 0 0 8px rgba(206,17,38,0.15); }
+  }
+  .report-fab-label {
+    position:fixed; bottom:30px; right:90px; z-index:400;
+    background:#1a1a1a; color:white; font-size:0.72rem; font-family:'Syne',sans-serif;
+    font-weight:600; padding:6px 12px; border-radius:20px; white-space:nowrap;
+    opacity:0; pointer-events:none; transition:opacity .2s;
+  }
+  .report-fab:hover + .report-fab-label, .report-fab-label.show { opacity:1; }
+
+  /* REPORT MODAL */
+  .report-modal-overlay {
+    display:none; position:fixed; inset:0; z-index:600;
+    background:rgba(0,0,0,0.6); align-items:flex-end; justify-content:center;
+    backdrop-filter:blur(4px);
+  }
+  .report-modal-overlay.open { display:flex; }
+  .report-modal {
+    background:white; border-radius:20px 20px 0 0; padding:0;
+    width:100%; max-width:560px; max-height:90vh; overflow-y:auto;
+    animation: slideUp2 .25s ease;
+  }
+  @keyframes slideUp2 { from{transform:translateY(100%)} to{transform:translateY(0)} }
+  .report-modal-handle { width:40px; height:4px; background:#ddd; border-radius:2px; margin:12px auto 0; }
+  .report-modal-header { background:var(--red); color:white; padding:1.2rem 1.5rem; }
+  .report-modal-header h3 { font-size:1rem; font-weight:800; }
+  .report-modal-header p  { font-size:0.7rem; opacity:.85; margin-top:2px; }
+  .report-modal-body { padding:1.5rem; }
+  .urgency-btns { display:flex; gap:0.6rem; margin-bottom:1.3rem; flex-wrap:wrap; }
+  .urgency-btn {
+    flex:1; min-width:80px; padding:10px 8px; border:2px solid var(--border);
+    border-radius:10px; cursor:pointer; text-align:center; background:white;
+    font-family:'Syne',sans-serif; font-size:0.75rem; font-weight:700;
+    transition:all .15s; color:var(--muted);
+  }
+  .urgency-btn .ub-icon { font-size:1.3rem; display:block; margin-bottom:4px; }
+  .urgency-btn.sel-low    { border-color:#16a34a; background:#dcfce7; color:#166534; }
+  .urgency-btn.sel-medium { border-color:#d97706; background:#fef3c7; color:#92400e; }
+  .urgency-btn.sel-high   { border-color:#dc2626; background:#fee2e2; color:#991b1b; }
+  .report-fg { margin-bottom:1rem; }
+  .report-fg label { font-size:0.63rem; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-family:'DM Mono',monospace; display:block; margin-bottom:5px; font-weight:600; }
+  .report-fg select, .report-fg input, .report-fg textarea {
+    width:100%; padding:10px 12px; border:1.5px solid var(--border); border-radius:8px;
+    font-family:'Syne',sans-serif; font-size:0.85rem; background:#f8f6f1; outline:none; transition:border-color .15s;
+  }
+  .report-fg select:focus, .report-fg input:focus, .report-fg textarea:focus { border-color:var(--red); background:white; }
+  .report-fg textarea { min-height:90px; resize:vertical; }
+  .photo-zone {
+    border:2px dashed var(--border); border-radius:10px; padding:1.5rem;
+    text-align:center; cursor:pointer; transition:border-color .15s; margin-bottom:1rem;
+    background:#fafaf9;
+  }
+  .photo-zone:hover { border-color:#999; }
+  .photo-zone input { display:none; }
+  .photo-zone .pz-icon { font-size:1.6rem; margin-bottom:6px; }
+  .photo-zone .pz-text { font-size:0.75rem; color:var(--muted); }
+  .photo-preview { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1rem; }
+  .photo-thumb { width:72px; height:72px; border-radius:8px; object-fit:cover; border:2px solid var(--border); }
+  .report-submit-btn {
+    width:100%; background:var(--red); color:white; border:none;
+    padding:14px; border-radius:10px; font-family:'Syne',sans-serif;
+    font-size:0.9rem; font-weight:700; cursor:pointer; transition:opacity .15s;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .report-submit-btn:hover { opacity:.85; }
+  .report-success {
+    display:none; background:#dcfce7; border:1.5px solid #16a34a;
+    color:#166534; border-radius:10px; padding:1rem; font-weight:600; font-size:.85rem;
+    margin-bottom:1rem; text-align:center;
+  }
+  .report-success.show { display:block; }
+  .report-log { margin-top:1.5rem; border-top:1px solid var(--border); padding-top:1rem; }
+  .report-log h5 { font-size:0.7rem; font-family:'DM Mono',monospace; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; margin-bottom:.7rem; }
+  .report-item {
+    display:flex; gap:.8rem; align-items:flex-start; padding:.7rem;
+    background:#f8f6f1; border-radius:8px; margin-bottom:.5rem; font-size:.75rem;
+  }
+  .report-dot { width:8px; height:8px; border-radius:50%; margin-top:4px; flex-shrink:0; }
+  .rdot-high { background:#dc2626; } .rdot-medium { background:#d97706; } .rdot-low { background:#16a34a; }
+  .ri-veh { font-weight:700; } .ri-desc { color:#555; margin-top:2px; }
+  .ri-meta { color:var(--muted); font-family:'DM Mono',monospace; font-size:.62rem; margin-top:2px; }
+  .ri-status { margin-left:auto; font-size:.6rem; font-family:'DM Mono',monospace; flex-shrink:0; padding:2px 7px; border-radius:20px; }
+  .ris-new { background:#fee2e2; color:#991b1b; }
+  .ris-seen { background:#fef3c7; color:#92400e; }
+
+  /* EDIT PENCIL btn on chrono rows */
+  .chrono-edit-btn {
+    background:none; border:none; cursor:pointer; color:#ccc;
+    font-size:0.75rem; padding:2px 4px; border-radius:4px;
+    transition:color .12s; flex-shrink:0; margin-left:4px;
+  }
+  .chrono-edit-btn:hover { color:var(--red); }
+
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-cross"></div>
+    <div>
+      <h1>Gestion de Flotte</h1>
+      <span>Croix-Rouge — Bouillon / Opont</span>
+    </div>
+  </div>
+  <div class="header-right"><button id="installBtn" onclick="installApp()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 16l-4-4h3V4h2v8h3l-4 4z"/><path d="M4 20h16"/></svg>Installer l'app</button><span id="lastUpdate">Dernière mise à jour : chargement…</span></div>
+</header>
+
+<div class="container">
+  <!-- Stats -->
+  <div class="stats-row" id="statsRow"></div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" placeholder="Rechercher un véhicule, immatriculation…">
+    </div>
+    <select id="filterGarage">
+      <option value="">Tous les garages</option>
+      <option value="MIA">MIA</option>
+      <option value="PICARD">PICARD</option>
+      <option value="DION">DION</option>
+      <option value="MS MOTOR">MS MOTOR</option>
+      <option value="ALBERT">ALBERT</option>
+    </select>
+    <select id="sortSelect">
+      <option value="name">Trier par nom</option>
+      <option value="km_desc">Plus de km</option>
+      <option value="km_asc">Moins de km</option>
+    </select>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('fleet')">🚐 Flotte</button>
+    <button class="tab-btn" onclick="switchTab('history')">📋 Historique mensuel</button>
+    <button class="tab-btn" onclick="switchTab('chart')">📈 Évolution km</button>
+    <button class="tab-btn" onclick="switchTab('form')">📝 Relevé mensuel</button>
+  </div>
+
+  <!-- Fleet Panel -->
+  <div class="fleet-panel active" id="panel-fleet">
+    <!-- Next maintenance banner -->
+    <div class="next-maint-banner" id="nextMaintBanner"></div>
+    <!-- Chronological columns -->
+    <div class="chrono-grid" id="chronoGrid"></div>
+    <div class="section-header">
+      <h2>Véhicules actifs</h2>
+      <span class="count-badge" id="vehicleCount">0 véhicules</span>
+    </div>
+    <div class="vehicles-grid" id="vehiclesGrid"></div>
+  </div>
+
+  <!-- Form Panel -->
+  <div class="form-panel" id="panel-form">
+    <div class="maint-form">
+      <div class="maint-form-header">
+        <div class="logo-cross" style="width:32px;height:32px;flex-shrink:0;"></div>
+        <div>
+          <h3>Formulaire de relevé mensuel</h3>
+          <p>Saisie des données de maintenance — Croix-Rouge Bouillon / Opont</p>
+        </div>
+      </div>
+      <div class="maint-form-body">
+        <div class="form-success" id="formSuccess">
+          ✅ Relevé enregistré avec succès !
+        </div>
+        <div class="form-top-row">
+          <div class="fg">
+            <label>Véhicule</label>
+            <select id="fVeh" onchange="updateFormKm()">
+              <option value="">— Sélectionner —</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Mois / Année</label>
+            <input type="month" id="fMonth" value="2026-03">
+          </div>
+          <div class="fg">
+            <label>Km relevé ce mois</label>
+            <input type="number" id="fKm" placeholder="ex: 72500" oninput="calcKmSince()">
+          </div>
+        </div>
+        <div class="form-top-row" style="grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.5rem;">
+          <div class="fg">
+            <label>Km depuis dernier relevé</label>
+            <input type="number" id="fKmSince" placeholder="calculé auto" readonly style="background:#f0ece6;color:var(--muted);">
+          </div>
+          <div class="fg">
+            <label>Garage</label>
+            <select id="fGarage">
+              <option>MIA</option><option>PICARD</option><option>DION</option>
+              <option>MS MOTOR</option><option>ALBERT</option><option>Autre</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Car wash</label>
+            <select id="fCw">
+              <option value="">—</option>
+              <option value="oui">✓ Oui</option>
+              <option value="non">✗ Non</option>
+              <option value="main">Manuel</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Fluid and check toggles -->
+        <div class="checks-grid">
+          <!-- Lave-glace -->
+          <div class="check-block">
+            <div class="check-title">🧊 Lave-glace</div>
+            <div class="check-options">
+              <div class="check-opt" data-group="lg" data-val="ok" onclick="toggleCheck(this,'ok')">OK</div>
+              <div class="check-opt" data-group="lg" data-val="nok" onclick="toggleCheck(this,'nok')">NOK</div>
+              <div class="check-opt" data-group="lg" data-val="qty" onclick="toggleCheck(this,'custom')">Quantité</div>
+            </div>
+            <input type="text" class="qty-input" id="fLgQty" placeholder="ex: 1,5 L" style="display:none;margin-top:6px;">
+          </div>
+
+          <!-- Huile moteur -->
+          <div class="check-block">
+            <div class="check-title">🛢️ Huile moteur</div>
+            <div class="check-options">
+              <div class="check-opt" data-group="hm" data-val="ok" onclick="toggleCheck(this,'ok')">OK</div>
+              <div class="check-opt" data-group="hm" data-val="nok" onclick="toggleCheck(this,'nok')">NOK</div>
+              <div class="check-opt" data-group="hm" data-val="qty" onclick="toggleCheck(this,'custom')">Quantité</div>
+            </div>
+            <input type="text" class="qty-input" id="fHmQty" placeholder="ex: 0,5 L" style="display:none;margin-top:6px;">
+          </div>
+
+          <!-- Liquide refroidissement -->
+          <div class="check-block">
+            <div class="check-title">🌡️ Liquide refroid.</div>
+            <div class="check-options">
+              <div class="check-opt" data-group="lr" data-val="ok" onclick="toggleCheck(this,'ok')">OK</div>
+              <div class="check-opt" data-group="lr" data-val="nok" onclick="toggleCheck(this,'nok')">NOK</div>
+              <div class="check-opt" data-group="lr" data-val="qty" onclick="toggleCheck(this,'custom')">Quantité</div>
+            </div>
+            <input type="text" class="qty-input" id="fLrQty" placeholder="ex: 0,3 L" style="display:none;margin-top:6px;">
+          </div>
+
+          <!-- Éclairage -->
+          <div class="check-block">
+            <div class="check-title">💡 Éclairage</div>
+            <div class="check-options">
+              <div class="check-opt" data-group="ecl" data-val="ok" onclick="toggleCheck(this,'ok')">OK</div>
+              <div class="check-opt" data-group="ecl" data-val="nok" onclick="toggleCheck(this,'nok')">NOK</div>
+              <div class="check-opt" data-group="ecl" data-val="voir" onclick="toggleCheck(this,'warn')">À voir</div>
+            </div>
+          </div>
+
+          <!-- Pneus -->
+          <div class="check-block">
+            <div class="check-title">🔄 Pneus</div>
+            <div class="check-options">
+              <div class="check-opt" data-group="pneus" data-val="ok" onclick="toggleCheck(this,'ok')">OK</div>
+              <div class="check-opt" data-group="pneus" data-val="PVP" onclick="toggleCheck(this,'ok')">PVP</div>
+              <div class="check-opt" data-group="pneus" data-val="limite" onclick="toggleCheck(this,'warn')">Limite</div>
+              <div class="check-opt" data-group="pneus" data-val="nok" onclick="toggleCheck(this,'nok')">NOK</div>
+            </div>
+          </div>
+
+          <!-- Entretien / CT -->
+          <div class="check-block">
+            <div class="check-title">🔧 Entretien / CT</div>
+            <div class="check-options">
+              <div class="check-opt" data-group="ent" data-val="rien" onclick="toggleCheck(this,'ok')">RAS</div>
+              <div class="check-opt" data-group="ent" data-val="entretien" onclick="toggleCheck(this,'custom')">Entretien</div>
+              <div class="check-opt" data-group="ent" data-val="ct" onclick="toggleCheck(this,'warn')">CT</div>
+              <div class="check-opt" data-group="ent" data-val="garage" onclick="toggleCheck(this,'nok')">Garage</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Remarques -->
+        <div class="fg" style="margin-bottom:1.5rem;">
+          <label>Remarques / observations</label>
+          <textarea id="fRmq" placeholder="Saisir toute remarque particulière sur l'état du véhicule…"></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn-reset" onclick="resetForm()">Réinitialiser</button>
+          <button class="btn-submit" onclick="submitForm()">💾 Enregistrer le relevé</button>
+        </div>
+
+        <!-- Saved entries -->
+        <div class="saved-entries" id="savedEntries"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Panel -->
+  <div class="history-panel" id="panel-history">
+    <div class="section-header">
+      <h2>Relevés de maintenance</h2>
+      <select id="historyMonth" style="font-size:0.82rem"></select>
+    </div>
+    <div class="table-wrap">
+      <table id="historyTable">
+        <thead>
+          <tr>
+            <th>Véhicule</th>
+            <th>Plaque</th>
+            <th>Km relevé</th>
+            <th>Km depuis</th>
+            <th>Lave-glace</th>
+            <th>Huile moteur</th>
+            <th>Éclairage</th>
+            <th>Pneus</th>
+            <th>Car wash</th>
+            <th>Remarque</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Chart Panel -->
+  <div class="chart-panel" id="panel-chart">
+    <div class="chart-container">
+      <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap;align-items:center;">
+        <h2 style="font-size:1rem;font-weight:700;">Évolution kilométrique par véhicule</h2>
+        <select id="chartVehicle" style="font-size:0.82rem"></select>
+      </div>
+      <canvas id="kmChart" height="120"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal" id="modalContent">
+    <div class="modal-header">
+      <h2 id="modalTitle">Détail véhicule</h2>
+      <button class="modal-close" onclick="closeModalDirect()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<!-- DATE EDIT MODAL -->
+<div class="date-modal-overlay" id="dateModalOverlay" onclick="if(event.target===this)closeDateModal()">
+  <div class="date-modal">
+    <h4 id="dmTitle">Modifier l'échéance</h4>
+    <div class="dm-sub" id="dmSub">—</div>
+    <div class="fg-row">
+      <div class="fg">
+        <label>Date réalisée / prévue</label>
+        <input type="date" id="dmDate">
+      </div>
+      <div class="fg">
+        <label>Statut</label>
+        <select id="dmStatus">
+          <option value="done">✅ Effectué</option>
+          <option value="planned">📅 Planifié</option>
+          <option value="due">⚠️ À faire</option>
+          <option value="overdue">🚨 En retard</option>
+        </select>
+      </div>
+    </div>
+    <div class="fg">
+      <label>Km au moment de l'intervention</label>
+      <input type="number" id="dmKm" placeholder="Optionnel">
+    </div>
+    <div class="fg" style="margin-top:.8rem;">
+      <label>Notes / garage</label>
+      <input type="text" id="dmNotes" placeholder="ex: MIA – révision complète">
+    </div>
+    <div class="dm-actions">
+      <button class="dm-btn-cancel" onclick="closeDateModal()">Annuler</button>
+      <button class="dm-btn-save" onclick="saveDateEdit()">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- REPORT MODAL (bottom sheet) -->
+<div class="report-modal-overlay" id="reportModalOverlay" onclick="if(event.target===this)closeReportModal()">
+  <div class="report-modal">
+    <div class="report-modal-handle"></div>
+    <div class="report-modal-header">
+      <h3>🚨 Signaler un problème</h3>
+      <p>Les chauffeurs peuvent signaler tout problème sur un véhicule</p>
+    </div>
+    <div class="report-modal-body">
+      <div class="report-success" id="reportSuccess">✅ Problème signalé — le responsable a été notifié !</div>
+      <div class="report-fg">
+        <label>Véhicule concerné</label>
+        <select id="rVeh"><option value="">— Sélectionner votre véhicule —</option></select>
+      </div>
+      <div class="report-fg">
+        <label>Votre nom (chauffeur)</label>
+        <input type="text" id="rDriver" placeholder="Prénom Nom">
+      </div>
+      <div class="report-fg">
+        <label>Niveau d'urgence</label>
+        <div class="urgency-btns">
+          <div class="urgency-btn" data-level="low"    onclick="selectUrgency(this)"><span class="ub-icon">🟢</span>Non urgent</div>
+          <div class="urgency-btn" data-level="medium" onclick="selectUrgency(this)"><span class="ub-icon">🟡</span>À surveiller</div>
+          <div class="urgency-btn" data-level="high"   onclick="selectUrgency(this)"><span class="ub-icon">🔴</span>URGENT</div>
+        </div>
+      </div>
+      <div class="report-fg">
+        <label>Catégorie</label>
+        <select id="rCat">
+          <option value="">— Sélectionner —</option>
+          <option>Pneu(s)</option>
+          <option>Éclairage / feux</option>
+          <option>Moteur / huile</option>
+          <option>Freins</option>
+          <option>Carrosserie / vitre</option>
+          <option>Bruit anormal</option>
+          <option>Chauffage / clim</option>
+          <option>Portes / serrures</option>
+          <option>Autre</option>
+        </select>
+      </div>
+      <div class="report-fg">
+        <label>Description du problème</label>
+        <textarea id="rDesc" placeholder="Décrivez précisément ce qui ne va pas…"></textarea>
+      </div>
+      <div class="report-fg">
+        <label>Km actuel du véhicule</label>
+        <input type="number" id="rKm" placeholder="ex: 72500">
+      </div>
+      <label style="font-size:.63rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-family:'DM Mono',monospace;font-weight:600;display:block;margin-bottom:5px;">Photo (optionnel)</label>
+      <div class="photo-zone" onclick="document.getElementById('rPhoto').click()">
+        <input type="file" id="rPhoto" accept="image/*" multiple onchange="previewPhotos(this)">
+        <div class="pz-icon">📷</div>
+        <div class="pz-text">Appuyer pour prendre une photo ou choisir depuis la galerie</div>
+      </div>
+      <div class="photo-preview" id="photoPreview"></div>
+      <button class="report-submit-btn" onclick="submitReport()">
+        <span>🚨</span> Envoyer le signalement
+      </button>
+      <div class="report-log" id="reportLog"></div>
+    </div>
+  </div>
+</div>
+
+<!-- FAB -->
+<button class="report-fab" onclick="openReportModal()" title="Signaler un problème">🚨</button>
+<div class="report-fab-label">Signaler un problème</div>
+
+<script>
+// ============================================================
+// DATA — extracted from the Excel file
+// ============================================================
+const VEHICLES = [
+  { id: "TLAM294", name: "Renault Kangoo", plate: "TLAM294", garage: "MIA", chassis: "VF1RFK00X69093954", circulation: "2022-04-13", site: "Bouillon" },
+  { id: "TLAM789", name: "Renault Kangoo", plate: "TLAM789", garage: "MIA", chassis: "VF1RFK00369801669", circulation: "2023-01-18", site: "Opont" },
+  { id: "TLAJ107", name: "Fiat Doblo", plate: "TLAJ107", garage: "PICARD", chassis: "ZFA26300006F65888", circulation: "2017-04-13", site: "Bouillon" },
+  { id: "TLAJ108", name: "Fiat Doblo", plate: "TLAJ108", garage: "PICARD", chassis: "ZFA26300006J06410", circulation: "2018-04-25", site: "Bouillon" },
+  { id: "TLAJ109", name: "Fiat Doblo", plate: "TLAJ 109", garage: "PICARD", chassis: "ZFA26300006J03006", circulation: "2018-04-25", site: "Opont" },
+  { id: "TLAJ110", name: "Fiat Doblo", plate: "TLAJ110", garage: "PICARD", chassis: "ZFA26300006B75805", circulation: "2016-02-08", site: "Bouillon" },
+  { id: "TLAM941", name: "Toyota Proace", plate: "TLAM941", garage: "MS MOTOR", chassis: "TMBJM9GN309028xxx", circulation: "2023-06-05", site: "Bouillon" },
+  { id: "TLAN527", name: "Toyota Proace", plate: "TLAN527", garage: "DION", chassis: "—", circulation: "2024-09-01", site: "Opont" },
+  { id: "TLAN633", name: "Renault Trafic", plate: "TLAN633", garage: "ALBERT", chassis: "—", circulation: "2025-02-26", site: "Opont" },
+  { id: "1RER037", name: "Peugeot Expert", plate: "1RER037", garage: "MIA", chassis: "VF3XVRHKHBZ014789", circulation: "2011-04-15", site: "Bouillon" },
+];
+
+// Monthly maintenance records extracted from Excel
+const MONTHLY_RECORDS = [
+  // [sheet_date, vehicle_plate, km, km_since, laveglace, huile_moteur, eclairage, pneus, carwash, remarque, garage]
+  { date:"2022-12",veh:"TLAJ106",km:161875,kms:null,lg:"4 L",hm:"ok",ecl:"ok",pneus:"ok",cw:"non",rmq:"",gar:"MIA"},
+  { date:"2022-12",veh:"TLAJ107",km:167740,kms:null,lg:"2 L",hm:"0,5 L",ecl:"non",pneus:"ok",cw:"non",rmq:"faire contrôler bougies feu croisement droit HS",gar:"PICARD"},
+  { date:"2022-12",veh:"TLAJ108",km:154691,kms:null,lg:"3 L",hm:"0,5 L",ecl:"ok",pneus:"ok",cw:"oui",rmq:"",gar:"PICARD"},
+  { date:"2022-12",veh:"TLAJ 109",km:149906,kms:null,lg:"1 L",hm:"ok",ecl:"ok",pneus:"ok",cw:"non",rmq:"",gar:"PICARD"},
+  { date:"2022-12",veh:"TLAJ110",km:197061,kms:null,lg:"ok",hm:"ok",ecl:"ok",pneus:"ok",cw:"non",rmq:"",gar:"PICARD"},
+  { date:"2022-12",veh:"TLAJ118",km:174106,kms:null,lg:"1 L",hm:"ok",ecl:"non",pneus:"ok",cw:"oui",rmq:"feu croisement droit HS",gar:"DION"},
+  { date:"2022-12",veh:"TLAM294",km:17689,kms:null,lg:"1,25 L",hm:"ok",ecl:"ok",pneus:"ok",cw:"oui",rmq:"",gar:"MIA"},
+  { date:"2022-12",veh:"1RER037",km:88989,kms:null,lg:"0,25 L",hm:"ok",ecl:"ok",pneus:"ok",cw:"non",rmq:"",gar:"MIA"},
+  { date:"2023-01",veh:"TLAM294",km:20353,kms:2664,lg:"1 l",hm:"ok",ecl:"ok",pneus:"ok",cw:"main",rmq:"",gar:"MIA"},
+  { date:"2023-01",veh:"TLAM789",km:39,kms:null,lg:"ok",hm:"ok",ecl:"ok",pneus:"ok",cw:"non",rmq:"remplace Berlingo le 15-02 = 21645 kms",gar:"MIA"},
+  { date:"2023-01",veh:"TLAJ107",km:170572,kms:null,lg:"2 l",hm:"0,25 l",ecl:"ok",pneus:"ok",cw:"non",rmq:"surveiller pneu AR droit",gar:"PICARD"},
+  { date:"2023-01",veh:"TLAJ108",km:157986,kms:null,lg:"1 l",hm:"ok",ecl:"nok",pneus:"ok",cw:"main",rmq:"feu croisement AVG HS",gar:"PICARD"},
+  { date:"2023-01",veh:"TLAJ 109",km:152327,kms:null,lg:"0,5 l",hm:"0,25 l",ecl:"ok",pneus:"ok",cw:"oui",rmq:"",gar:"PICARD"},
+  { date:"2023-01",veh:"TLAJ110",km:198283,kms:null,lg:"0,25 l",hm:"0,25 l",ecl:"ok",pneus:"ok",cw:"oui",rmq:"",gar:"PICARD"},
+  { date:"2023-01",veh:"TLAJ118",km:175673,kms:null,lg:"1 l",hm:"ok",ecl:"ok",pneus:"ok",cw:"non",rmq:"",gar:"DION"},
+  { date:"2023-01",veh:"1RER037",km:89082,kms:null,lg:null,hm:null,ecl:null,pneus:null,cw:"—",rmq:"au garage",gar:"MIA"},
+  { date:"2023-02",veh:"TLAM294",km:22455,kms:2102,lg:"3 L",hm:"ok",ecl:"ok",pneus:"ok",cw:null,rmq:"",gar:"MIA"},
+  { date:"2023-02",veh:"TLAM789",km:1382,kms:1343,lg:"1/2 L",hm:"ok",ecl:"ok",pneus:"ok",cw:"oui",rmq:"",gar:"MIA"},
+  { date:"2023-02",veh:"TLAJ107",km:173168,kms:2596,lg:"2 L",hm:"1/4 L",ecl:"ok",pneus:"voir",cw:null,rmq:"bruit roue AVG",gar:"PICARD"},
+  { date:"2023-02",veh:"TLAJ108",km:160281,kms:2295,lg:"2,5 L",hm:"1/4 L",ecl:"ok",pneus:"ok",cw:"oui",rmq:"",gar:"PICARD"},
+  { date:"2023-02",veh:"TLAJ 109",km:154563,kms:2236,lg:"1,5 L",hm:"ok",ecl:"ok",pneus:"ok",cw:null,rmq:"",gar:"PICARD"},
+  { date:"2023-02",veh:"TLAJ110",km:199736,kms:1453,lg:"1,5 L",hm:"ok",ecl:"ok",pneus:"ok",cw:"oui",rmq:"",gar:"PICARD"},
+  { date:"2023-02",veh:"1RER037",km:89319,kms:330,lg:"1/4 L",hm:"ok",ecl:"ok",pneus:"limite",cw:null,rmq:"pneu AVD limite d'usure",gar:"MIA"},
+  { date:"2023-03",veh:"TLAM294",km:23547,kms:1092,lg:"2 L",hm:"ok",ecl:"ok",pneus:"ok",cw:"non",rmq:"CW le 11/04",gar:"MIA"},
+  { date:"2023-03",veh:"TLAM789",km:4303,kms:2921,lg:"1 L",hm:"ok",ecl:"ok",pneus:"ok",cw:"non",rmq:"",gar:"MIA"},
+  { date:"2023-03",veh:"TLAJ107",km:176402,kms:3234,lg:null,hm:null,ecl:null,pneus:null,cw:"non",rmq:"entretien effectué le 30-03",gar:"PICARD"},
+  { date:"2023-03",veh:"TLAJ108",km:163528,kms:3247,lg:"1 L",hm:"1/4 L",ecl:"ok",pneus:"ok",cw:"non",rmq:"",gar:"PICARD"},
+  { date:"2023-03",veh:"TLAJ 109",km:157138,kms:2575,lg:"1/3 L",hm:"1/4 L",ecl:"ok",pneus:"ok",cw:"non",rmq:"",gar:"PICARD"},
+  { date:"2023-03",veh:"TLAJ110",km:201836,kms:2100,lg:"1/3 L",hm:"1/4 L",ecl:"ok",pneus:"ok",cw:"non",rmq:"",gar:"PICARD"},
+  { date:"2023-03",veh:"TLAJ118",km:180072,kms:2706,lg:"1/3 L",hm:"ok",ecl:"ok",pneus:"!!!",cw:"non",rmq:"pneus avant limite d'usure",gar:"DION"},
+  { date:"2023-03",veh:"1RER037",km:89509,kms:190,lg:null,hm:null,ecl:null,pneus:null,cw:"non",rmq:"seulement 190 kms sur 1 mois",gar:"MIA"},
+  // Continuing with key months...
+  { date:"2023-06",veh:"TLAM941",km:6,kms:0,lg:null,hm:null,ecl:null,pneus:null,cw:null,rmq:"arrivée du véhicule le 05-06",gar:"MS MOTOR"},
+  { date:"2023-08",veh:"TLAJ118",km:185929,kms:928,lg:null,hm:null,ecl:null,pneus:null,cw:null,rmq:"Vendue le 30/08 pour 4050€ HTVA à 185704 kms",gar:"DION"},
+  { date:"2024-09",veh:"TLAN527",km:10,kms:0,lg:null,hm:null,ecl:null,pneus:null,cw:null,rmq:"Nouveau véhicule arrivé",gar:"DION"},
+  { date:"2025-02",veh:"TLAN633",km:null,kms:0,lg:null,hm:null,ecl:null,pneus:null,cw:null,rmq:"véhicule transféré de Recht à Opont le 26/02",gar:"ALBERT"},
+  // Latest month data
+  { date:"2026-02",veh:"TLAM294",km:70110,kms:907,lg:null,hm:null,ecl:null,pneus:"PVP",cw:null,rmq:"RV Carglass 18-02 impact parebrise",gar:"MIA"},
+  { date:"2026-02",veh:"TLAM789",km:101775,kms:2123,lg:"0,2 l",hm:null,ecl:null,pneus:"PVP",cw:"oui",rmq:"pneu ARD s'use extérieur",gar:"MIA"},
+  { date:"2026-02",veh:"TLAJ107",km:235685,kms:2229,lg:"1,7 l",hm:null,ecl:null,pneus:"PVP",cw:null,rmq:"Vendue le... à 237.652 kms",gar:"PICARD"},
+  { date:"2026-02",veh:"TLAJ108",km:265028,kms:1677,lg:"0,5 l",hm:"200 ml",ecl:null,pneus:"PVP",cw:null,rmq:"permuter pneus avec la 110",gar:"PICARD"},
+  { date:"2026-02",veh:"TLAJ 109",km:221639,kms:1764,lg:"ajusté",hm:null,ecl:null,pneus:"PVP",cw:"oui",rmq:"",gar:"PICARD"},
+  { date:"2026-02",veh:"TLAJ110",km:262742,kms:1605,lg:"NE PEUT PLUS ROULER",hm:null,ecl:null,pneus:null,cw:null,rmq:"NE PEUT PLUS ROULER APD 09-02-26",gar:"PICARD"},
+  { date:"2026-02",veh:"TLAM941",km:72284,kms:1851,lg:"1 l",hm:null,ecl:null,pneus:"PVP",cw:"oui",rmq:"",gar:"MS MOTOR"},
+  { date:"2026-02",veh:"TLAN527",km:45618,kms:3855,lg:"0,6 l",hm:null,ecl:null,pneus:"PVP",cw:"oui",rmq:"pneus à remplacer",gar:"DION"},
+  { date:"2026-02",veh:"TLAN633",km:35842,kms:3152,lg:"0,5 l",hm:null,ecl:null,pneus:"PVP",cw:"oui",rmq:"",gar:"ALBERT"},
+  { date:"2026-02",veh:"1RER037",km:96652,kms:470,lg:null,hm:null,ecl:null,pneus:"PVP",cw:"oui",rmq:"",gar:"MIA"},
+];
+
+// KM Evolution data (monthly km per vehicle)
+const KM_EVOLUTION = {
+  "TLAM294": [
+    {d:"2022-12",km:17689},{d:"2023-02",km:22455},{d:"2023-04",km:23547},{d:"2023-06",km:26455},
+    {d:"2023-08",km:28978},{d:"2023-10",km:31777},{d:"2023-12",km:36533},{d:"2024-02",km:38566},
+    {d:"2024-04",km:40952},{d:"2024-06",km:43336},{d:"2024-08",km:48049},{d:"2024-10",km:50046},
+    {d:"2024-12",km:53036},{d:"2025-02",km:55162},{d:"2025-04",km:57939},{d:"2025-06",km:59991},
+    {d:"2025-08",km:63656},{d:"2025-10",km:65200},{d:"2025-12",km:65939},{d:"2026-01",km:67649},{d:"2026-02",km:70110},
+  ],
+  "TLAM789": [
+    {d:"2023-01",km:39},{d:"2023-04",km:6991},{d:"2023-06",km:10936},{d:"2023-08",km:16874},
+    {d:"2023-10",km:22571},{d:"2023-12",km:27976},{d:"2024-02",km:33487},{d:"2024-04",km:39005},
+    {d:"2024-06",km:44704},{d:"2024-08",km:52968},{d:"2024-10",km:56227},{d:"2024-12",km:59802},
+    {d:"2025-02",km:63455},{d:"2025-04",km:68534},{d:"2025-06",km:75388},{d:"2025-08",km:84801},
+    {d:"2025-10",km:91340},{d:"2025-12",km:94414},{d:"2026-01",km:99652},{d:"2026-02",km:101775},
+  ],
+  "TLAJ107": [
+    {d:"2022-12",km:167740},{d:"2023-03",km:176402},{d:"2023-06",km:181891},{d:"2023-08",km:186492},
+    {d:"2023-10",km:192843},{d:"2023-12",km:198718},{d:"2024-02",km:204990},{d:"2024-04",km:211092},
+    {d:"2024-06",km:216468},{d:"2024-08",km:223721},{d:"2024-10",km:226858},{d:"2024-12",km:231746},
+    {d:"2025-02",km:235685},
+  ],
+  "TLAJ108": [
+    {d:"2022-12",km:154691},{d:"2023-04",km:163528},{d:"2023-06",km:168302},{d:"2023-08",km:173764},
+    {d:"2023-10",km:181004},{d:"2023-12",km:189016},{d:"2024-02",km:196720},{d:"2024-04",km:203628},
+    {d:"2024-06",km:211365},{d:"2024-08",km:220383},{d:"2024-10",km:223245},{d:"2024-12",km:230751},
+    {d:"2025-02",km:235867},{d:"2025-04",km:240566},{d:"2025-06",km:243938},{d:"2025-08",km:249222},
+    {d:"2025-10",km:253764},{d:"2025-12",km:258573},{d:"2026-01",km:260901},{d:"2026-02",km:265028},
+  ],
+  "TLAJ109": [
+    {d:"2022-12",km:149906},{d:"2023-04",km:157138},{d:"2023-06",km:161303},{d:"2023-08",km:163384},
+    {d:"2023-10",km:167634},{d:"2023-12",km:172859},{d:"2024-02",km:177979},{d:"2024-04",km:182657},
+    {d:"2024-06",km:186548},{d:"2024-08",km:191918},{d:"2024-10",km:194868},{d:"2024-12",km:199496},
+    {d:"2025-02",km:202532},{d:"2025-04",km:205069},{d:"2025-06",km:208409},{d:"2025-08",km:211846},
+    {d:"2025-10",km:214516},{d:"2025-12",km:217241},{d:"2026-01",km:218586},{d:"2026-02",km:221639},
+  ],
+  "TLAJ110": [
+    {d:"2022-12",km:197061},{d:"2023-04",km:201836},{d:"2023-06",km:206831},{d:"2023-08",km:209585},
+    {d:"2023-10",km:213149},{d:"2023-12",km:218860},{d:"2024-02",km:223853},{d:"2024-04",km:227099},
+    {d:"2024-06",km:230827},{d:"2024-08",km:233593},{d:"2024-10",km:237346},{d:"2024-12",km:240790},
+    {d:"2025-02",km:244480},{d:"2025-04",km:247488},{d:"2025-06",km:250265},{d:"2025-08",km:253639},
+    {d:"2025-10",km:256922},{d:"2025-12",km:259277},{d:"2026-01",km:261137},{d:"2026-02",km:262742},
+  ],
+  "TLAM941": [
+    {d:"2023-06",km:6},{d:"2023-08",km:1597},{d:"2023-10",km:7882},{d:"2023-12",km:14209},
+    {d:"2024-02",km:20417},{d:"2024-04",km:24080},{d:"2024-06",km:28222},{d:"2024-08",km:31938},
+    {d:"2024-10",km:34769},{d:"2024-12",km:38632},{d:"2025-02",km:41143},{d:"2025-04",km:45489},
+    {d:"2025-06",km:50997},{d:"2025-08",km:55712},{d:"2025-10",km:60337},{d:"2025-12",km:64768},
+    {d:"2026-01",km:67669},{d:"2026-02",km:72284},
+  ],
+  "TLAN527": [
+    {d:"2024-09",km:10},{d:"2024-10",km:538},{d:"2024-12",km:2165},{d:"2025-01",km:4703},
+    {d:"2025-02",km:6555},{d:"2025-04",km:11133},{d:"2025-06",km:17421},{d:"2025-08",km:23759},
+    {d:"2025-10",km:29321},{d:"2025-12",km:36208},{d:"2026-01",km:39150},{d:"2026-02",km:45618},
+  ],
+  "TLAN633": [
+    {d:"2025-03",km:432},{d:"2025-04",km:3194},{d:"2025-06",km:9197},{d:"2025-08",km:15578},
+    {d:"2025-10",km:21543},{d:"2025-12",km:27765},{d:"2026-01",km:29978},{d:"2026-02",km:35842},
+  ],
+  "1RER037": [
+    {d:"2022-12",km:88989},{d:"2023-03",km:89509},{d:"2023-06",km:89982},{d:"2023-08",km:90308},
+    {d:"2023-10",km:90653},{d:"2023-12",km:91014},{d:"2024-02",km:91599},{d:"2024-04",km:91908},
+    {d:"2024-06",km:92171},{d:"2024-08",km:92536},{d:"2024-10",km:92845},{d:"2024-12",km:93399},
+    {d:"2025-02",km:93789},{d:"2025-04",km:94054},{d:"2025-06",km:94584},{d:"2025-08",km:95064},
+    {d:"2025-10",km:95505},{d:"2025-12",km:95834},{d:"2026-01",km:95939},{d:"2026-02",km:96652},
+  ],
+};
+
+// Latest status
+const LATEST = {
+  "TLAM294": { km:70110, cw:null, pneus:"PVP", rmq:"RV Carglass impact parebrise" },
+  "TLAM789": { km:101775, cw:"oui", pneus:"PVP", rmq:"pneu ARD s'use extérieur" },
+  "TLAJ107": { km:235685, cw:null, pneus:"PVP", rmq:"Vendue — plaque radiée le 04-03" },
+  "TLAJ108": { km:265028, cw:null, pneus:"PVP", rmq:"permuter pneus avec la 110" },
+  "TLAJ109": { km:221639, cw:"oui", pneus:"PVP", rmq:"" },
+  "TLAJ110": { km:262742, cw:null, pneus:null, rmq:"⚠️ NE PEUT PLUS ROULER depuis le 09-02-26" },
+  "TLAM941": { km:72284, cw:"oui", pneus:"PVP", rmq:"" },
+  "TLAN527": { km:45618, cw:"oui", pneus:"PVP", rmq:"pneus à remplacer" },
+  "TLAN633": { km:35842, cw:"oui", pneus:"PVP", rmq:"" },
+  "1RER037": { km:96652, cw:"oui", pneus:"PVP", rmq:"" },
+};
+
+// Months dropdown data
+const MONTHS = [
+  "2026-02","2026-01","2025-12","2025-11","2025-10","2025-09","2025-08","2025-07","2025-06","2025-05",
+  "2025-04","2025-03","2025-02","2025-01","2024-12","2024-11","2024-10","2024-09","2024-08","2024-07",
+  "2024-06","2024-05","2024-04","2024-03","2024-02","2024-01","2023-12","2023-11","2023-10","2023-09",
+  "2023-08","2023-07","2023-06","2023-05","2023-04","2023-03","2023-02","2023-01","2022-12",
+];
+
+const COLORS = ["#CE1126","#1e40af","#2d7a3a","#d97706","#7c3aed","#0e7490","#be185d","#059669","#9a3412","#374151"];
+
+let currentTab = 'fleet';
+let chartInstance = null;
+
+// ============================================================
+// INIT
+// ============================================================
+// ============================================================
+// MAINTENANCE EVENTS (from entretiens_ct.html data)
+// ============================================================
+const TODAY_D = new Date('2026-03-06');
+const MAINT_EVENTS = [
+  { veh:'TLAM294', type:'entretien', date:'2026-04-10', status:'planned', notes:'MIA' },
+  { veh:'TLAM294', type:'ct',        date:'2026-04-13', status:'planned', notes:'CT légal 4 ans' },
+  { veh:'TLAM789', type:'entretien', date:'2026-09-01', status:'planned', notes:'MIA' },
+  { veh:'TLAM789', type:'ct',        date:'2026-01-18', status:'done',    notes:'CT passé OK' },
+  { veh:'TLAJ108', type:'entretien', date:'2026-05-15', status:'planned', notes:'PICARD' },
+  { veh:'TLAJ108', type:'ct',        date:'2026-04-25', status:'planned', notes:'CT biannuel' },
+  { veh:'TLAJ109', type:'entretien', date:'2026-03-20', status:'due',     notes:'PICARD – dépassé 15000km' },
+  { veh:'TLAJ109', type:'ct',        date:'2026-02-01', status:'overdue', notes:'⚠️ En retard' },
+  { veh:'TLAM941', type:'entretien', date:'2026-08-01', status:'planned', notes:'MS MOTOR' },
+  { veh:'TLAM941', type:'ct',        date:'2026-06-05', status:'planned', notes:'CT légal 3 ans' },
+  { veh:'TLAN527', type:'entretien', date:'2026-06-15', status:'planned', notes:'DION' },
+  { veh:'TLAN527', type:'ct',        date:'2027-09-01', status:'planned', notes:'CT légal 3 ans' },
+  { veh:'TLAN633', type:'entretien', date:'2026-09-01', status:'planned', notes:'ALBERT' },
+  { veh:'TLAN633', type:'ct',        date:'2028-02-26', status:'planned', notes:'CT légal 2 ans' },
+  { veh:'1RER037', type:'entretien', date:'2026-07-10', status:'planned', notes:'PICARD' },
+  { veh:'1RER037', type:'ct',        date:'2026-03-15', status:'due',     notes:'Dans 9 jours' },
+];
+
+let savedFormEntries = [];
+
+function diffDaysFrom(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  return Math.round((d - TODAY_D) / 86400000);
+}
+
+function fmtDate(str) {
+  if (!str) return '—';
+  const d = new Date(str + 'T12:00:00');
+  return d.toLocaleDateString('fr-BE', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+function deltaLabel(days) {
+  if (days < -365) return Math.abs(Math.round(days/365)) + ' an(s) retard';
+  if (days < -30)  return Math.abs(Math.round(days/30)) + ' mois retard';
+  if (days < 0)    return Math.abs(days) + ' j. de retard';
+  if (days === 0)  return "Aujourd'hui";
+  if (days <= 30)  return 'Dans ' + days + ' j.';
+  if (days <= 365) return 'Dans ' + Math.round(days/30) + ' mois';
+  return 'Dans ' + Math.round(days/365) + ' an(s)';
+}
+
+// ============================================================
+// MAINTENANCE FORM
+// ============================================================
+function populateFormVehicles() {
+  const sel = document.getElementById('fVeh');
+  if (!sel) return;
+  const activeVeh = VEHICLES.filter(v => {
+    const lat = LATEST[v.id] || {};
+    return !lat.rmq?.includes('NE PEUT PLUS') && !lat.rmq?.includes('Vendue');
+  });
+  sel.innerHTML = '<option value="">— Sélectionner —</option>' +
+    activeVeh.map(v => `<option value="${v.id}" data-garage="${v.garage}">${v.name} — ${v.plate} (${v.site})</option>`).join('');
+}
+
+function updateFormKm() {
+  const vehId = document.getElementById('fVeh').value;
+  if (!vehId) return;
+  const v = VEHICLES.find(v => v.id === vehId);
+  if (v) {
+    const garSel = document.getElementById('fGarage');
+    garSel.value = v.garage || 'MIA';
+  }
+  calcKmSince();
+}
+
+function calcKmSince() {
+  const vehId = document.getElementById('fVeh').value;
+  const newKm = parseInt(document.getElementById('fKm').value);
+  if (!vehId || isNaN(newKm)) { document.getElementById('fKmSince').value = ''; return; }
+  const lastKm = LATEST[vehId]?.km;
+  if (lastKm && newKm > lastKm) {
+    document.getElementById('fKmSince').value = newKm - lastKm;
+  } else {
+    document.getElementById('fKmSince').value = '';
+  }
+}
+
+// Track selected values per group
+const formChecks = {};
+function toggleCheck(el, colorClass) {
+  const group = el.dataset.group;
+  // deselect all in group
+  document.querySelectorAll(`.check-opt[data-group="${group}"]`).forEach(o => {
+    o.className = 'check-opt';
+  });
+  el.classList.add('selected-' + colorClass);
+  formChecks[group] = el.dataset.val;
+
+  // show/hide qty inputs
+  const qtyMap = { lg: 'fLgQty', hm: 'fHmQty', lr: 'fLrQty' };
+  if (qtyMap[group]) {
+    const inp = document.getElementById(qtyMap[group]);
+    if (inp) inp.style.display = (el.dataset.val === 'qty') ? 'block' : 'none';
+  }
+}
+
+function getCheckVal(group) {
+  const val = formChecks[group];
+  if (!val) return null;
+  const qtyMap = { lg: 'fLgQty', hm: 'fHmQty', lr: 'fLrQty' };
+  if (val === 'qty' && qtyMap[group]) {
+    return document.getElementById(qtyMap[group]).value || 'qty';
+  }
+  return val;
+}
+
+function submitForm() {
+  const vehId = document.getElementById('fVeh').value;
+  if (!vehId) { alert('Veuillez sélectionner un véhicule.'); return; }
+  const month = document.getElementById('fMonth').value;
+  if (!month) { alert('Veuillez sélectionner un mois.'); return; }
+  const km = document.getElementById('fKm').value;
+  if (!km) { alert('Veuillez saisir le km relevé.'); return; }
+
+  const entry = {
+    id: Date.now(),
+    veh: vehId,
+    vehName: VEHICLES.find(v=>v.id===vehId)?.name || vehId,
+    month,
+    km: parseInt(km),
+    kmSince: parseInt(document.getElementById('fKmSince').value) || null,
+    garage: document.getElementById('fGarage').value,
+    cw: document.getElementById('fCw').value,
+    lg: getCheckVal('lg'), hm: getCheckVal('hm'), lr: getCheckVal('lr'),
+    ecl: getCheckVal('ecl'), pneus: getCheckVal('pneus'), ent: getCheckVal('ent'),
+    rmq: document.getElementById('fRmq').value,
+  };
+
+  savedFormEntries.unshift(entry);
+  renderSavedEntries();
+  const succ = document.getElementById('formSuccess');
+  succ.classList.add('show');
+  setTimeout(() => succ.classList.remove('show'), 3000);
+  resetForm(true);
+}
+
+function resetForm(keepVeh) {
+  if (!keepVeh) document.getElementById('fVeh').value = '';
+  document.getElementById('fKm').value = '';
+  document.getElementById('fKmSince').value = '';
+  document.getElementById('fCw').value = '';
+  document.getElementById('fRmq').value = '';
+  document.querySelectorAll('.check-opt').forEach(o => o.className = 'check-opt');
+  document.querySelectorAll('.qty-input').forEach(i => { i.value=''; i.style.display='none'; });
+  Object.keys(formChecks).forEach(k => delete formChecks[k]);
+}
+
+function deleteEntry(id) {
+  savedFormEntries = savedFormEntries.filter(e => e.id !== id);
+  renderSavedEntries();
+}
+
+function renderSavedEntries() {
+  const cont = document.getElementById('savedEntries');
+  if (!savedFormEntries.length) { cont.innerHTML=''; return; }
+  const [y,m] = (savedFormEntries[0]?.month||'').split('-');
+  const mNames = {
+    '01':'Jan','02':'Fév','03':'Mar','04':'Avr','05':'Mai','06':'Jun',
+    '07':'Jul','08':'Aoû','09':'Sep','10':'Oct','11':'Nov','12':'Déc'
+  };
+  cont.innerHTML = `
+    <h4>Relevés saisis cette session (${savedFormEntries.length})</h4>
+    ${savedFormEntries.map(e => {
+      const checks = [
+        e.lg ? '🧊'+e.lg : null,
+        e.hm ? '🛢️'+e.hm : null,
+        e.ecl ? '💡'+e.ecl : null,
+        e.pneus ? '🔄'+e.pneus : null,
+      ].filter(Boolean).join(' · ');
+      const [ey,em] = (e.month||'').split('-');
+      return `
+        <div class="saved-row">
+          <span class="sr-veh">${e.vehName}</span>
+          <span class="sr-date">${mNames[em]||em} ${ey} · ${e.km?.toLocaleString('fr')} km${e.kmSince?` (+${e.kmSince.toLocaleString('fr')})`:''}</span>
+          <span style="font-size:0.7rem;color:#888;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${checks}</span>
+          ${e.rmq ? `<span style="font-size:0.7rem;color:#888;font-style:italic;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${e.rmq}">${e.rmq}</span>` : ''}
+          <button class="sr-del" onclick="deleteEntry(${e.id})" title="Supprimer">✕</button>
+        </div>`;
+    }).join('')}
+  `;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderStats();
+  renderNextMaintBanner();
+  renderChronoPanels();
+  renderVehicles();
+  populateMonthSelect();
+  populateChartVehicles();
+  populateFormVehicles();
+  renderHistory(MONTHS[0]);
+  document.getElementById('lastUpdate').textContent = 'Dernière mise à jour : Fév 2026';
+
+  document.getElementById('searchInput').addEventListener('input', renderVehicles);
+  document.getElementById('filterGarage').addEventListener('change', renderVehicles);
+  document.getElementById('sortSelect').addEventListener('change', renderVehicles);
+  document.getElementById('historyMonth').addEventListener('change', e => renderHistory(e.target.value));
+  document.getElementById('chartVehicle').addEventListener('change', e => renderChart(e.target.value));
+});
+
+function renderStats() {
+  const activeVehicles = VEHICLES.filter(v => !LATEST[v.id]?.rmq.includes("Vendue") && !LATEST[v.id]?.rmq.includes("NE PEUT PLUS"));
+  const totalKm = Object.values(LATEST).reduce((s,v) => s + (v.km||0), 0);
+  const avgKm = Math.round(totalKm / Object.values(LATEST).filter(v=>v.km).length);
+  const issues = Object.values(LATEST).filter(v => v.rmq && v.rmq.length > 3).length;
+
+  const stats = [
+    { value: VEHICLES.length, label: "Véhicules flotte" },
+    { value: activeVehicles.length, label: "En service" },
+    { value: (totalKm/1000).toFixed(0)+"k", label: "Km total flotte" },
+    { value: (avgKm/1000).toFixed(0)+"k", label: "Km moyen / véhicule" },
+    { value: issues, label: "Remarques actives" },
+    { value: "Fév 2026", label: "Dernier relevé" },
+  ];
+  document.getElementById('statsRow').innerHTML = stats.map(s => `
+    <div class="stat-card">
+      <div class="stat-value">${s.value}</div>
+      <div class="stat-label">${s.label}</div>
+    </div>
+  `).join('');
+}
+
+function renderVehicles() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const garage = document.getElementById('filterGarage').value;
+  const sort = document.getElementById('sortSelect').value;
+
+  let vehicles = VEHICLES.filter(v => {
+    const matchSearch = !search || v.name.toLowerCase().includes(search) || v.plate.toLowerCase().includes(search) || v.site.toLowerCase().includes(search);
+    const matchGarage = !garage || v.garage === garage;
+    return matchSearch && matchGarage;
+  });
+
+  if (sort === 'km_desc') vehicles.sort((a,b) => (LATEST[b.id]?.km||0) - (LATEST[a.id]?.km||0));
+  else if (sort === 'km_asc') vehicles.sort((a,b) => (LATEST[a.id]?.km||0) - (LATEST[b.id]?.km||0));
+  else vehicles.sort((a,b) => a.name.localeCompare(b.name));
+
+  document.getElementById('vehicleCount').textContent = vehicles.length + ' véhicule' + (vehicles.length>1?'s':'');
+
+  if (vehicles.length === 0) {
+    document.getElementById('vehiclesGrid').innerHTML = `<div class="empty" style="grid-column:1/-1"><h3>Aucun véhicule trouvé</h3><p>Modifiez vos critères de recherche</p></div>`;
+    return;
+  }
+
+  document.getElementById('vehiclesGrid').innerHTML = vehicles.map(v => {
+    const lat = LATEST[v.id] || {};
+    const kmData = KM_EVOLUTION[v.id] || [];
+    const maxKm = 350000;
+    const pct = Math.min(100, Math.round((lat.km||0)/maxKm*100));
+    const isOutOfService = lat.rmq?.includes("NE PEUT PLUS") || lat.rmq?.includes("Vendue");
+    const statusColor = isOutOfService ? '#991b1b' : '#166534';
+    const statusBg = isOutOfService ? '#fee2e2' : '#dcfce7';
+    const statusText = isOutOfService ? (lat.rmq?.includes("Vendue") ? "Vendu" : "Hors service") : "En service";
+
+    // Last month km increase
+    let kmSince = "";
+    if (kmData.length >= 2) {
+      const last = kmData[kmData.length-1].km;
+      const prev = kmData[kmData.length-2].km;
+      const diff = last - prev;
+      kmSince = `+${diff.toLocaleString('fr')} km`;
+    }
+
+    return `
+      <div class="vehicle-card" onclick="openModal('${v.id}')">
+        <div class="vc-header">
+          <div class="vc-title">${v.name}</div>
+          <div class="vc-plate">${v.plate}</div>
+        </div>
+        <div class="vc-body">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <div class="vc-km">${(lat.km||0).toLocaleString('fr')}<span> km</span></div>
+              <div style="font-size:0.72rem;color:var(--muted);margin-top:2px;font-family:'DM Mono',monospace">${kmSince}</div>
+            </div>
+            <span class="badge" style="background:${statusBg};color:${statusColor};margin-top:4px">${statusText}</span>
+          </div>
+          <div class="km-bar-wrap">
+            <div class="km-bar"><div class="km-bar-fill" style="width:${pct}%"></div></div>
+          </div>
+          <div class="vc-meta">
+            <div class="vc-meta-item">
+              <div class="vc-meta-label">Garage</div>
+              <div class="vc-meta-value">${v.garage}</div>
+            </div>
+            <div class="vc-meta-item">
+              <div class="vc-meta-label">Site</div>
+              <div class="vc-meta-value">${v.site}</div>
+            </div>
+            <div class="vc-meta-item">
+              <div class="vc-meta-label">En service depuis</div>
+              <div class="vc-meta-value">${v.circulation}</div>
+            </div>
+            <div class="vc-meta-item">
+              <div class="vc-meta-label">Relevés</div>
+              <div class="vc-meta-value">${kmData.length} mois</div>
+            </div>
+          </div>
+          ${lat.rmq ? `<div class="vc-remarks">${lat.rmq}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function populateMonthSelect() {
+  const sel = document.getElementById('historyMonth');
+  const monthNames = {
+    "01":"Janvier","02":"Février","03":"Mars","04":"Avril","05":"Mai","06":"Juin",
+    "07":"Juillet","08":"Août","09":"Septembre","10":"Octobre","11":"Novembre","12":"Décembre"
+  };
+  sel.innerHTML = MONTHS.map(m => {
+    const [y, mo] = m.split('-');
+    return `<option value="${m}">${monthNames[mo]} ${y}</option>`;
+  }).join('');
+}
+
+function renderHistory(month) {
+  const records = MONTHLY_RECORDS.filter(r => r.date === month);
+
+  if (records.length === 0) {
+    document.getElementById('historyBody').innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">Aucune donnée pour ce mois</td></tr>`;
+    return;
+  }
+
+  const formatCheck = (val) => {
+    if (!val || val === null) return '<span style="color:var(--muted)">—</span>';
+    const v = String(val).toLowerCase();
+    if (v === 'ok' || v === 'oui') return `<span class="ok">✓ ${val}</span>`;
+    if (v === 'non' || v === 'nok') return `<span class="nok">✗ ${val}</span>`;
+    if (v.includes('!!!') || v.includes('limite')) return `<span class="warn-cell">⚠ ${val}</span>`;
+    return `<span class="warn-cell">${val}</span>`;
+  };
+
+  document.getElementById('historyBody').innerHTML = records.map(r => `
+    <tr>
+      <td>${r.veh}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:0.75rem">${r.gar || '—'}</td>
+      <td class="km">${r.km ? r.km.toLocaleString('fr') : '—'}</td>
+      <td class="km">${r.kms ? '+'+r.kms.toLocaleString('fr') : '—'}</td>
+      <td>${formatCheck(r.lg)}</td>
+      <td>${formatCheck(r.hm)}</td>
+      <td>${formatCheck(r.ecl)}</td>
+      <td>${formatCheck(r.pneus)}</td>
+      <td>${formatCheck(r.cw)}</td>
+      <td style="max-width:200px;font-size:0.75rem;font-style:italic;color:#555">${r.rmq || ''}</td>
+    </tr>
+  `).join('');
+}
+
+function populateChartVehicles() {
+  const sel = document.getElementById('chartVehicle');
+  sel.innerHTML = Object.keys(KM_EVOLUTION).map(id => {
+    const v = VEHICLES.find(x => x.id === id || x.id.replace(' ','') === id.replace(' ',''));
+    return `<option value="${id}">${v ? v.name + ' — ' + id : id}</option>`;
+  }).join('');
+  // Add "all" option at beginning
+  sel.insertAdjacentHTML('afterbegin', '<option value="ALL">Tous les véhicules</option>');
+}
+
+function renderChart(vehicleId) {
+  const canvas = document.getElementById('kmChart');
+  const ctx = canvas.getContext('2d');
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  let datasets = [];
+  let labels = new Set();
+
+  const ids = vehicleId === 'ALL' ? Object.keys(KM_EVOLUTION) : [vehicleId];
+  ids.forEach(id => {
+    const data = KM_EVOLUTION[id] || [];
+    data.forEach(d => labels.add(d.d));
+  });
+  const sortedLabels = Array.from(labels).sort();
+
+  ids.forEach((id, i) => {
+    const data = KM_EVOLUTION[id] || [];
+    const map = {};
+    data.forEach(d => { map[d.d] = d.km; });
+    const values = sortedLabels.map(l => map[l] || null);
+    const v = VEHICLES.find(x => x.id === id);
+    datasets.push({
+      label: (v ? v.name + ' ' : '') + id,
+      data: values,
+      borderColor: COLORS[i % COLORS.length],
+      backgroundColor: COLORS[i % COLORS.length] + '20',
+      tension: 0.4,
+      fill: vehicleId !== 'ALL',
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      spanGaps: true,
+    });
+  });
+
+  const monthNames = {"01":"Jan","02":"Fév","03":"Mar","04":"Avr","05":"Mai","06":"Jun","07":"Jul","08":"Aoû","09":"Sep","10":"Oct","11":"Nov","12":"Déc"};
+  const labelsFmt = sortedLabels.map(l => {
+    const [y, m] = l.split('-');
+    return monthNames[m] + ' ' + y.slice(2);
+  });
+
+  // Simple canvas chart without external lib
+  const W = canvas.offsetWidth || 800;
+  canvas.width = W;
+  canvas.height = Math.min(400, W * 0.35);
+
+  const pad = { top: 20, right: 20, bottom: 50, left: 70 };
+  const cw = canvas.width - pad.left - pad.right;
+  const ch = canvas.height - pad.top - pad.bottom;
+
+  // Find min/max
+  const allVals = datasets.flatMap(d => d.data.filter(v => v !== null));
+  const minVal = Math.max(0, Math.min(...allVals) * 0.95);
+  const maxVal = Math.max(...allVals) * 1.05;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = '11px DM Mono, monospace';
+  ctx.fillStyle = '#888';
+
+  // Grid lines
+  const steps = 5;
+  ctx.strokeStyle = '#e5e0d8';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= steps; i++) {
+    const y = pad.top + ch - (i / steps) * ch;
+    const val = Math.round(minVal + (i / steps) * (maxVal - minVal));
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'right';
+    ctx.fillText((val/1000).toFixed(0)+'k', pad.left - 8, y + 4);
+  }
+
+  // X axis labels
+  ctx.textAlign = 'center';
+  const step = Math.max(1, Math.floor(sortedLabels.length / 12));
+  sortedLabels.forEach((l, i) => {
+    if (i % step === 0) {
+      const x = pad.left + (i / (sortedLabels.length - 1)) * cw;
+      ctx.fillStyle = '#888';
+      ctx.fillText(labelsFmt[i], x, canvas.height - 10);
+    }
+  });
+
+  // Lines
+  datasets.forEach(ds => {
+    ctx.strokeStyle = ds.borderColor;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    let started = false;
+    ds.data.forEach((val, i) => {
+      if (val === null) { started = false; return; }
+      const x = pad.left + (i / (sortedLabels.length - 1)) * cw;
+      const y = pad.top + ch - ((val - minVal) / (maxVal - minVal)) * ch;
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Dots
+    ds.data.forEach((val, i) => {
+      if (val === null) return;
+      const x = pad.left + (i / (sortedLabels.length - 1)) * cw;
+      const y = pad.top + ch - ((val - minVal) / (maxVal - minVal)) * ch;
+      ctx.fillStyle = ds.borderColor;
+      ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI*2); ctx.fill();
+    });
+  });
+
+  // Legend
+  if (vehicleId === 'ALL') {
+    datasets.forEach((ds, i) => {
+      const lx = pad.left + (i % 4) * Math.min(180, cw / 4);
+      const ly = canvas.height - 5;
+      ctx.fillStyle = ds.borderColor;
+      ctx.fillRect(lx, ly - 10, 16, 3);
+      ctx.fillStyle = '#555';
+      ctx.textAlign = 'left';
+      ctx.fillText(ds.label.split(' ').pop(), lx + 20, ly - 3);
+    });
+  }
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+function openModal(vehicleId) {
+  const v = VEHICLES.find(x => x.id === vehicleId);
+  if (!v) return;
+  const lat = LATEST[vehicleId] || {};
+  const kmData = KM_EVOLUTION[vehicleId] || [];
+
+  document.getElementById('modalTitle').textContent = v.name + ' — ' + v.plate;
+
+  const maxKm = 350000;
+  const pct = Math.min(100, Math.round((lat.km||0)/maxKm*100));
+
+  // History entries for this vehicle
+  const history = MONTHLY_RECORDS.filter(r => {
+    const id = vehicleId === "TLAJ109" ? "TLAJ 109" : vehicleId;
+    return r.veh === v.plate || r.veh === id;
+  }).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 18);
+
+  document.getElementById('modalBody').innerHTML = `
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="info-label">Marque & Modèle</div>
+        <div class="info-value">${v.name}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Immatriculation</div>
+        <div class="info-value" style="font-family:'DM Mono',monospace">${v.plate}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Chassis</div>
+        <div class="info-value" style="font-family:'DM Mono',monospace;font-size:0.78rem">${v.chassis}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Mise en circulation</div>
+        <div class="info-value">${v.circulation}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Garage attitré</div>
+        <div class="info-value">${v.garage}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Site</div>
+        <div class="info-value">${v.site}</div>
+      </div>
+    </div>
+
+    <div class="section-title">Kilométrage actuel</div>
+    <div style="font-size:2rem;font-weight:800;font-family:'DM Mono',monospace;color:var(--red)">${(lat.km||0).toLocaleString('fr')} km</div>
+    <div class="km-bar-wrap" style="margin-top:0.5rem">
+      <div class="km-bar-label">
+        <span style="font-size:0.7rem;color:var(--muted)">0 km</span>
+        <span style="font-size:0.7rem;color:var(--muted)">${pct}% de 350 000 km</span>
+        <span style="font-size:0.7rem;color:var(--muted)">350 000 km</span>
+      </div>
+      <div class="km-bar" style="height:12px"><div class="km-bar-fill" style="width:${pct}%"></div></div>
+    </div>
+
+    ${lat.rmq ? `<div class="vc-remarks" style="margin-top:1rem">${lat.rmq}</div>` : ''}
+
+    <div class="section-title">Historique des relevés (${history.length} entrées)</div>
+    <div class="history-mini">
+      ${history.length === 0 ? '<p style="color:var(--muted);font-size:0.82rem">Aucun historique disponible</p>' :
+        history.map(r => `
+          <div class="history-row">
+            <span class="h-date">${r.date}</span>
+            <span class="h-km">${r.km ? r.km.toLocaleString('fr')+' km' : '—'}</span>
+            <span class="h-note">${r.rmq || (r.lg ? 'LG: '+r.lg : '') || 'RAS'}</span>
+          </div>
+        `).join('')
+      }
+    </div>
+
+    <div class="section-title" style="margin-top:1rem">Évolution km (${kmData.length} points)</div>
+    <canvas id="modalChart" height="80"></canvas>
+  `;
+
+  document.getElementById('modalOverlay').classList.add('open');
+
+  // Draw mini chart
+  setTimeout(() => {
+    const mc = document.getElementById('modalChart');
+    if (!mc || kmData.length < 2) return;
+    const ctx = mc.getContext('2d');
+    mc.width = mc.offsetWidth || 700;
+    mc.height = 140;
+    const pad = {top:10,right:10,bottom:30,left:60};
+    const cw = mc.width - pad.left - pad.right;
+    const ch = mc.height - pad.top - pad.bottom;
+    const vals = kmData.map(d=>d.km);
+    const minV = 0;
+    const maxV = Math.max(...vals) * 1.1;
+    ctx.clearRect(0,0,mc.width,mc.height);
+    ctx.strokeStyle = '#e5e0d8'; ctx.lineWidth = 1;
+    for (let i=0;i<=4;i++) {
+      const y = pad.top + ch - (i/4)*ch;
+      ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(pad.left+cw,y); ctx.stroke();
+      ctx.fillStyle='#aaa'; ctx.font='10px DM Mono,monospace'; ctx.textAlign='right';
+      ctx.fillText(((minV+(i/4)*(maxV-minV))/1000).toFixed(0)+'k', pad.left-5, y+4);
+    }
+    ctx.strokeStyle = 'var(--red)'; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    kmData.forEach((d,i) => {
+      const x = pad.left + (i/(kmData.length-1))*cw;
+      const y = pad.top + ch - ((d.km-minV)/(maxV-minV))*ch;
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    kmData.forEach((d,i) => {
+      const x = pad.left + (i/(kmData.length-1))*cw;
+      const y = pad.top + ch - ((d.km-minV)/(maxV-minV))*ch;
+      ctx.fillStyle='var(--red)'; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
+    });
+    // X labels
+    const step = Math.max(1, Math.floor(kmData.length/6));
+    ctx.fillStyle='#aaa'; ctx.textAlign='center'; ctx.font='9px DM Mono,monospace';
+    kmData.forEach((d,i) => {
+      if (i % step === 0) {
+        const x = pad.left + (i/(kmData.length-1))*cw;
+        ctx.fillText(d.d.replace('-','/').slice(2), x, mc.height-5);
+      }
+    });
+  }, 50);
+}
+
+function closeModal(e) {
+  if (e.target === document.getElementById('modalOverlay')) closeModalDirect();
+}
+function closeModalDirect() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+
+// ============================================================
+// TAB SWITCHING
+// ============================================================
+
+// ============================================================
+// NEXT MAINTENANCE DATE (samedi le plus proche de fin de mois)
+// ============================================================
+function getNextMaintenanceSaturday() {
+  // Find the Saturday closest to end-of-month, for current and next months
+  function closestSatToEOM(year, month) {
+    // last day of month
+    const lastDay = new Date(year, month + 1, 0);
+    const ld = lastDay.getDate();
+    // find Saturday closest to last day
+    let best = null, bestDiff = 99;
+    for (let d = ld - 6; d <= ld; d++) {
+      const date = new Date(year, month, d);
+      if (date.getDay() === 6) { // Saturday
+        const diff = Math.abs(ld - d);
+        if (diff < bestDiff) { bestDiff = diff; best = date; }
+      }
+    }
+    return best;
+  }
+  const now = TODAY_D;
+  const candidates = [];
+  for (let offset = 0; offset <= 2; offset++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    candidates.push(closestSatToEOM(d.getFullYear(), d.getMonth()));
+  }
+  // Return the next one >= today
+  for (const c of candidates) {
+    if (c >= now) return c;
+  }
+  return candidates[candidates.length - 1];
+}
+
+function renderNextMaintBanner() {
+  const banner = document.getElementById('nextMaintBanner');
+  if (!banner) return;
+  const sat = getNextMaintenanceSaturday();
+  const days = Math.round((sat - TODAY_D) / 86400000);
+  const opts = { weekday:'long', day:'2-digit', month:'long', year:'numeric' };
+  const dateStr = sat.toLocaleDateString('fr-BE', opts);
+  const urgClass = days <= 7 ? '#dc2626' : days <= 14 ? '#d97706' : 'rgba(255,255,255,0.9)';
+  banner.innerHTML = `
+    <div class="nmb-icon">📅</div>
+    <div>
+      <div class="nmb-title">Prochaine maintenance mensuelle</div>
+      <div class="nmb-date">${dateStr.charAt(0).toUpperCase() + dateStr.slice(1)}</div>
+      <div class="nmb-sub">Samedi le plus proche de fin de mois</div>
+    </div>
+    <div class="nmb-right">
+      <div class="nmb-days" style="color:${urgClass}">${days === 0 ? "Auj." : days < 0 ? Math.abs(days)+"j" : days}</div>
+      <div class="nmb-days-label">${days < 0 ? "jours de retard" : days === 0 ? "C'est aujourd'hui !" : "jours restants"}</div>
+    </div>
+  `;
+}
+
+// ============================================================
+// DATE EDIT MODAL
+// ============================================================
+let currentEditIdx = null;
+
+function openDateEditModal(idx) {
+  currentEditIdx = idx;
+  const e = MAINT_EVENTS[idx];
+  const v = VEHICLES.find(v => v.id === e.veh);
+  const typeLabel = e.type === 'ct' ? 'Contrôle technique' : 'Entretien';
+  document.getElementById('dmTitle').textContent = `Modifier — ${typeLabel}`;
+  document.getElementById('dmSub').textContent = `${v ? v.name + ' · ' + v.plate : e.veh} · ${v ? v.site : ''}`;
+  document.getElementById('dmDate').value = e.date;
+  document.getElementById('dmStatus').value = e.status;
+  document.getElementById('dmKm').value = e.km || '';
+  document.getElementById('dmNotes').value = e.notes || '';
+  document.getElementById('dateModalOverlay').classList.add('open');
+}
+
+function closeDateModal() {
+  document.getElementById('dateModalOverlay').classList.remove('open');
+  currentEditIdx = null;
+}
+
+function saveDateEdit() {
+  if (currentEditIdx === null) return;
+  const e = MAINT_EVENTS[currentEditIdx];
+  e.date   = document.getElementById('dmDate').value;
+  e.status = document.getElementById('dmStatus').value;
+  e.km     = parseInt(document.getElementById('dmKm').value) || null;
+  e.notes  = document.getElementById('dmNotes').value;
+  closeDateModal();
+  renderChronoPanels();
+  // flash feedback
+  const g = document.getElementById('chronoGrid');
+  g.style.opacity = '0.5';
+  setTimeout(() => { g.style.transition='opacity .3s'; g.style.opacity='1'; }, 50);
+}
+
+// ============================================================
+// UPDATED renderChronoPanels (with edit buttons)
+// ============================================================
+function renderChronoPanels() {
+  const activeVeh = VEHICLES.filter(v => {
+    const lat = LATEST[v.id] || {};
+    return !lat.rmq?.includes('NE PEUT PLUS') && !lat.rmq?.includes('Vendue');
+  });
+
+  function getNextEvt(vehId, type) {
+    let best = null, bestIdx = null;
+    MAINT_EVENTS.forEach((e, i) => {
+      if (e.veh !== vehId || e.type !== type || e.status === 'done') return;
+      if (!best || new Date(e.date) < new Date(best.date)) { best = e; bestIdx = i; }
+    });
+    return { evt: best, idx: bestIdx };
+  }
+
+  const entRows = activeVeh.map(v => {
+    const { evt, idx } = getNextEvt(v.id, 'entretien');
+    return { v, evt, idx };
+  }).sort((a,b) => {
+    if (!a.evt && !b.evt) return 0;
+    if (!a.evt) return 1; if (!b.evt) return -1;
+    return new Date(a.evt.date) - new Date(b.evt.date);
+  });
+
+  const ctRows = activeVeh.map(v => {
+    const { evt, idx } = getNextEvt(v.id, 'ct');
+    return { v, evt, idx };
+  }).sort((a,b) => {
+    if (!a.evt && !b.evt) return 0;
+    if (!a.evt) return 1; if (!b.evt) return -1;
+    return new Date(a.evt.date) - new Date(b.evt.date);
+  });
+
+  function buildRows(rows) {
+    return rows.map((row, i) => {
+      const { v, evt, idx } = row;
+      const days = evt ? diffDaysFrom(evt.date) : null;
+      const isOverdue = evt && (evt.status === 'overdue' || days < 0);
+      const isSoon    = !isOverdue && days !== null && days <= 30;
+      const isFar     = days === null || days > 90;
+      const rankClass = isOverdue ? 'rank-urgent' : isSoon ? 'rank-warn' : isFar ? 'rank-far' : 'rank-ok';
+      const dateClass = isOverdue ? 'delta-overdue' : isSoon ? 'delta-soon' : isFar ? 'delta-far' : 'delta-ok';
+      const editBtn   = idx !== null
+        ? `<button class="chrono-edit-btn" onclick="event.stopPropagation();openDateEditModal(${idx})" title="Modifier la date">✏️</button>`
+        : '';
+      return `
+        <div class="chrono-row">
+          <div class="chrono-rank ${rankClass}">${i+1}</div>
+          <div class="chrono-veh">
+            <div class="chrono-name">${v.name}</div>
+            <div class="chrono-plate">${v.plate} · ${v.site}</div>
+          </div>
+          <div class="chrono-right">
+            <div class="chrono-date ${dateClass}">${evt ? fmtDate(evt.date) : '—'}</div>
+            <div class="chrono-delta ${dateClass}">${days !== null ? deltaLabel(days) : 'Non planifié'}</div>
+          </div>
+          ${editBtn}
+        </div>`;
+    }).join('');
+  }
+
+  const entUrgent = entRows.filter(r => r.evt && (r.evt.status==='overdue'||diffDaysFrom(r.evt.date)<0)).length;
+  const ctUrgent  = ctRows.filter(r => r.evt && (r.evt.status==='overdue'||diffDaysFrom(r.evt.date)<0)).length;
+  const entBarClass = entUrgent > 0 ? 'bar-danger' : entRows.filter(r=>r.evt&&diffDaysFrom(r.evt.date)<=30).length>0 ? 'bar-warn' : 'bar-ok';
+  const ctBarClass  = ctUrgent > 0  ? 'bar-danger' : ctRows.filter(r=>r.evt&&diffDaysFrom(r.evt.date)<=30).length>0  ? 'bar-warn' : 'bar-ok';
+
+  document.getElementById('chronoGrid').innerHTML = `
+    <div class="chrono-panel">
+      <div class="chrono-header chrono-header-ent">
+        <div class="chrono-icon icon-ent">🔧</div>
+        <div>
+          <strong>Prochains entretiens</strong>
+          <div style="font-size:.65rem;font-weight:400;color:#6b7280;margin-top:2px;font-family:'DM Mono',monospace;">Ordre chronologique · ✏️ pour modifier</div>
+        </div>
+        ${entUrgent > 0 ? `<span style="margin-left:auto;background:#fee2e2;color:#991b1b;font-size:.62rem;font-weight:700;padding:3px 8px;border-radius:20px;font-family:'DM Mono',monospace;">${entUrgent} URGENT</span>` : ''}
+      </div>
+      <div class="chrono-list">${buildRows(entRows)}</div>
+      <div class="chrono-status-bar ${entBarClass}"></div>
+    </div>
+    <div class="chrono-panel">
+      <div class="chrono-header chrono-header-ct">
+        <div class="chrono-icon icon-ct-bg">🔍</div>
+        <div>
+          <strong>Prochains contrôles techniques</strong>
+          <div style="font-size:.65rem;font-weight:400;color:#6b7280;margin-top:2px;font-family:'DM Mono',monospace;">Ordre chronologique · ✏️ pour modifier</div>
+        </div>
+        ${ctUrgent > 0 ? `<span style="margin-left:auto;background:#fee2e2;color:#991b1b;font-size:.62rem;font-weight:700;padding:3px 8px;border-radius:20px;font-family:'DM Mono',monospace;">${ctUrgent} EN RETARD</span>` : ''}
+      </div>
+      <div class="chrono-list">${buildRows(ctRows)}</div>
+      <div class="chrono-status-bar ${ctBarClass}"></div>
+    </div>
+  `;
+}
+
+// ============================================================
+// REPORT PROBLEM
+// ============================================================
+let reportUrgency = null;
+let reportEntries = [];
+
+function openReportModal() {
+  // populate vehicles
+  const sel = document.getElementById('rVeh');
+  const activeVeh = VEHICLES.filter(v => {
+    const lat = LATEST[v.id] || {};
+    return !lat.rmq?.includes('NE PEUT PLUS') && !lat.rmq?.includes('Vendue');
+  });
+  sel.innerHTML = '<option value="">— Sélectionner votre véhicule —</option>' +
+    activeVeh.map(v => `<option value="${v.id}">${v.name} — ${v.plate} (${v.site})</option>`).join('');
+  // pre-fill km if vehicle already selected
+  document.getElementById('reportModalOverlay').classList.add('open');
+  document.getElementById('reportSuccess').classList.remove('show');
+}
+
+function closeReportModal() {
+  document.getElementById('reportModalOverlay').classList.remove('open');
+}
+
+function selectUrgency(el) {
+  document.querySelectorAll('.urgency-btn').forEach(b => b.className = 'urgency-btn');
+  el.classList.add('sel-' + el.dataset.level);
+  reportUrgency = el.dataset.level;
+}
+
+function previewPhotos(input) {
+  const preview = document.getElementById('photoPreview');
+  preview.innerHTML = '';
+  Array.from(input.files).forEach(file => {
+    const img = document.createElement('img');
+    img.className = 'photo-thumb';
+    img.src = URL.createObjectURL(file);
+    preview.appendChild(img);
+  });
+}
+
+function submitReport() {
+  const vehId = document.getElementById('rVeh').value;
+  if (!vehId) { alert('Veuillez sélectionner le véhicule.'); return; }
+  const driver = document.getElementById('rDriver').value.trim();
+  if (!driver) { alert('Veuillez indiquer votre nom.'); return; }
+  if (!reportUrgency) { alert('Veuillez sélectionner le niveau d\'urgence.'); return; }
+  const cat  = document.getElementById('rCat').value;
+  const desc = document.getElementById('rDesc').value.trim();
+  if (!desc) { alert('Veuillez décrire le problème.'); return; }
+  const km = document.getElementById('rKm').value;
+  const v  = VEHICLES.find(v => v.id === vehId);
+
+  reportEntries.unshift({
+    id: Date.now(),
+    veh: vehId,
+    vehName: v?.name || vehId,
+    plate: v?.plate || '',
+    driver, urgency: reportUrgency, cat, desc, km,
+    date: new Date().toLocaleDateString('fr-BE', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}),
+    status: 'new'
+  });
+
+  // reset fields
+  document.getElementById('rVeh').value = '';
+  document.getElementById('rDriver').value = '';
+  document.getElementById('rDesc').value = '';
+  document.getElementById('rKm').value = '';
+  document.getElementById('rCat').value = '';
+  document.getElementById('rPhoto').value = '';
+  document.getElementById('photoPreview').innerHTML = '';
+  document.querySelectorAll('.urgency-btn').forEach(b => b.className='urgency-btn');
+  reportUrgency = null;
+
+  document.getElementById('reportSuccess').classList.add('show');
+  renderReportLog();
+  // auto-close after 2s
+  setTimeout(() => {
+    closeReportModal();
+    document.getElementById('reportSuccess').classList.remove('show');
+  }, 2200);
+}
+
+function renderReportLog() {
+  const log = document.getElementById('reportLog');
+  if (!reportEntries.length) { log.innerHTML=''; return; }
+  const dotClass = { high:'rdot-high', medium:'rdot-medium', low:'rdot-low' };
+  const badgeClass = { new:'ris-new', seen:'ris-seen' };
+  const urgLabel = { high:'🔴 URGENT', medium:'🟡 À surveiller', low:'🟢 Non urgent' };
+  log.innerHTML = `
+    <h5>Signalements de cette session (${reportEntries.length})</h5>
+    ${reportEntries.map(r => `
+      <div class="report-item">
+        <div class="report-dot ${dotClass[r.urgency]}"></div>
+        <div style="flex:1;min-width:0;">
+          <div class="ri-veh">${r.vehName} · ${r.plate}</div>
+          <div class="ri-desc">${r.cat ? r.cat + ' — ' : ''}${r.desc}</div>
+          <div class="ri-meta">${r.driver} · ${r.date}${r.km?' · '+parseInt(r.km).toLocaleString('fr')+' km':''}</div>
+        </div>
+        <span class="ri-status ris-new">${urgLabel[r.urgency]}</span>
+      </div>
+    `).join('')}
+  `;
+}
+
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach((btn,i) => {
+    const tabs = ['fleet','history','chart','form'];
+    btn.classList.toggle('active', tabs[i] === tab);
+  });
+  document.querySelectorAll('.fleet-panel,.history-panel,.chart-panel,.form-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-'+tab).classList.add('active');
+
+  if (tab === 'chart') {
+    setTimeout(() => renderChart(document.getElementById('chartVehicle').value), 100);
+  }
+}
+
+window.addEventListener('resize', () => {
+  if (currentTab === 'chart') renderChart(document.getElementById('chartVehicle').value);
+});
+</script>
+</body>
+</html>
+<script>
+// PWA Install logic
+let deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('installBtn');
+  if (btn) btn.style.display = 'inline-flex';
+});
+
+function installApp() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((result) => {
+      deferredPrompt = null;
+      const btn = document.getElementById('installBtn');
+      if (btn) btn.style.display = 'none';
+    });
+  } else {
+    alert("Pour installer l'app :\n\n📱 Android Chrome : Menu ⋮ → \"Ajouter à l'écran d'accueil\"\n🍎 iPhone Safari : Partager ↑ → \"Sur l'écran d'accueil\"");
+  }
+}
+
+window.addEventListener('appinstalled', () => {
+  const btn = document.getElementById('installBtn');
+  if (btn) btn.style.display = 'none';
+  deferredPrompt = null;
+});
+</script>
